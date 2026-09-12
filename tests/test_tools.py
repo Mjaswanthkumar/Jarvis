@@ -135,3 +135,22 @@ def test_duplicate_registration_fails_fast() -> None:
         @tool(description="b", permission=PermissionLevel.READ_ONLY, registry=registry)
         def dupe() -> int:  # noqa: F811
             return 2
+
+
+def test_network_info_returns_usable_interfaces() -> None:
+    """Regression: psutil's field is `isup`, not `is_up` -- this raised for months."""
+    result = REGISTRY.execute("network_info")
+    assert result.ok, result.error
+    assert result.data["hostname"]
+    for interface in result.data["interfaces"]:
+        assert interface["addresses"]
+        assert interface["up"] in (True, False, None)
+
+
+def test_safe_commands_run_inside_the_sandbox() -> None:
+    """Without an explicit cwd these inherit the server's working directory."""
+    from jarvis.tools.paths import default_root
+
+    result = REGISTRY.execute("run_safe_command", {"command": "hostname"})
+    assert result.ok, result.error
+    assert result.data["working_directory"] == str(default_root())

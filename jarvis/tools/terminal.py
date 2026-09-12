@@ -13,6 +13,7 @@ import shlex
 from typing import Any
 
 from jarvis.tools import shell
+from jarvis.tools.paths import default_root
 from jarvis.tools.permissions import PermissionLevel
 from jarvis.tools.registry import tool
 
@@ -57,9 +58,13 @@ class UnsafeCommandError(PermissionError):
 )
 def run_safe_command(command: str) -> dict[str, Any]:
     argv = validate_command(command)
-    result = shell.run(argv, timeout=_TIMEOUT)
+    # Without an explicit cwd these inherit the server's working directory, so
+    # `git status` would report on whatever folder Jarvis was started in --
+    # outside the sandbox the file tools are confined to.
+    result = shell.run(argv, cwd=default_root(), timeout=_TIMEOUT)
     return {
         "command": " ".join(argv),
+        "working_directory": str(default_root()),
         "exit_code": result.exit_code,
         "ok": result.ok,
         "timed_out": result.timed_out,

@@ -8,6 +8,9 @@ on the model's prose, which is not stable and is not the contract.
 from __future__ import annotations
 
 import asyncio
+import os
+import shutil
+import tempfile
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -144,6 +147,16 @@ def score(case: Case, result: AgentResult) -> list[str]:
     return failures
 
 
+def case_sandbox(case_id: str) -> Path:
+    """A *deterministic* sandbox path for a case.
+
+    It must not be a random temp directory: the path appears in the prompt and
+    in tool results, so a random one changes the recorded conversation state
+    every run and every cassette key misses on replay.
+    """
+    return Path(tempfile.gettempdir()) / "jarvis-evals" / case_id
+
+
 async def run_case(
     case: Case,
     provider: LLMProvider,
@@ -151,25 +164,27 @@ async def run_case(
     registry: ToolRegistry | None = None,
 ) -> CaseResult:
     """Run one case in an isolated sandbox and score it."""
-    import os
-    import tempfile
-
     from jarvis.config import get_settings
 
     started = time.perf_counter()
     previous_roots = os.environ.get("JARVIS_ALLOWED_ROOTS")
+    sandbox = case_sandbox(case.id)
+    shutil.rmtree(sandbox, ignore_errors=True)
+    sandbox.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory(prefix="jarvis-eval-") as sandbox:
-        if case.files:
-            root = Path(sandbox)
-            for name, content in case.files.items():
-                target = root / name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(content, encoding="utf-8")
-            os.environ["JARVIS_ALLOWED_ROOTS"] = sandbox
+    try:
+        for name, content in case.files.items():
+            target = sandbox / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+        # Any case that names the sandbox is confined to it, so results do not
+        # depend on what happens to exist on the developer's machine.
+        if case.files or "{sandbox}" in case.prompt:
+            os.environ["JARVIS_ALLOWED_ROOTS"] = str(sandbox)
             get_settings.cache_clear()
 
-        prompt = case.prompt.replace("{sandbox}", sandbox)
+        prompt = case.prompt.replace("{sandbox}", str(sandbox))
         agent = JarvisAgent(
             provider, registry or sandbox_registry(), policy or PolicyEngine()
         )
@@ -179,13 +194,13 @@ async def run_case(
         except Exception as exc:  # a harness failure is not a model failure
             error = f"{type(exc).__name__}: {exc}"
             result = AgentResult(reply="")
-        finally:
-            if case.files:
-                if previous_roots is None:
-                    os.environ.pop("JARVIS_ALLOWED_ROOTS", None)
-                else:
-                    os.environ["JARVIS_ALLOWED_ROOTS"] = previous_roots
-                get_settings.cache_clear()
+    finally:
+        if previous_roots is None:
+            os.environ.pop("JARVIS_ALLOWED_ROOTS", None)
+        else:
+            os.environ["JARVIS_ALLOWED_ROOTS"] = previous_roots
+        get_settings.cache_clear()
+        shutil.rmtree(sandbox, ignore_errors=True)
 
     return CaseResult(
         case=case,

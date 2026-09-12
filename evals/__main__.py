@@ -28,9 +28,9 @@ def report(results: list[CaseResult], threshold: float) -> bool:
         tools = ", ".join(result.called) or "-"
         print(f"  {mark}  {result.case.id:34} {DIM}{tools}{RESET}")
         for failure in result.failures:
-            print(f"        {RED}→ {failure}{RESET}")
+            print(f"        {RED}-> {failure}{RESET}")
         if result.error:
-            print(f"        {RED}→ harness error: {result.error}{RESET}")
+            print(f"        {RED}-> harness error: {result.error}{RESET}")
 
     print(f"\n{BOLD}By category{RESET}")
     for name, bucket in sorted(metrics["by_category"].items()):

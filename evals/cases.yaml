@@ -95,8 +95,11 @@
   category: git
   prompt: What is the git status of {sandbox}?
   expect_tools: [git_status]
-  max_tools: 2
-  expect_all_failed: true # not a repository -- must report, not invent
+  # The model may reasonably retry or fall back to `git status` via the terminal
+  # tool once git_status reports "not a repository"; what it must not do is
+  # invent an answer.
+  max_tools: 3
+  expect_all_failed: true
 
 - id: git_history
   category: git

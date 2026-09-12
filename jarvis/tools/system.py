@@ -145,7 +145,7 @@ def network_info() -> dict[str, Any]:
             {
                 "name": name,
                 "addresses": ipv4,
-                "up": bool(stats[name].is_up) if name in stats else None,
+                "up": bool(stats[name].isup) if name in stats else None,
                 "speed_mbps": stats[name].speed if name in stats else None,
             }
         )

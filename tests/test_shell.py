@@ -62,3 +62,39 @@ def test_long_output_is_truncated() -> None:
     assert result.ok
     assert "output truncated" in result.stdout
     assert len(result.stdout) < 50000
+
+
+def test_git_cannot_escape_the_sandbox_upwards(
+    tmp_path, monkeypatch
+) -> None:
+    """git searches upwards, so a stray .git in a parent could answer for a
+    folder that is not a repository at all."""
+    from jarvis.config import get_settings
+
+    monkeypatch.setenv("JARVIS_ALLOWED_ROOTS", str(tmp_path))
+    get_settings.cache_clear()
+    try:
+        result = shell.run(["git", "status", "--porcelain"], cwd=tmp_path)
+        assert not result.ok
+        assert "not a git repository" in result.stderr
+    finally:
+        get_settings.cache_clear()
+
+
+def test_git_still_resolves_a_repository_inside_the_sandbox(tmp_path, monkeypatch):
+    """The ceiling must not break the normal case: a repo below the root."""
+    from jarvis.config import get_settings
+
+    repo = tmp_path / "nested" / "project"
+    repo.mkdir(parents=True)
+    monkeypatch.setenv("JARVIS_ALLOWED_ROOTS", str(tmp_path))
+    get_settings.cache_clear()
+    try:
+        assert shell.run(["git", "init", "-q"], cwd=repo).exit_code == 0
+        sub = repo / "src"
+        sub.mkdir()
+        found = shell.run(["git", "rev-parse", "--show-toplevel"], cwd=sub)
+        assert found.ok
+        assert "project" in found.stdout
+    finally:
+        get_settings.cache_clear()

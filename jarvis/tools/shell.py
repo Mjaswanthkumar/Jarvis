@@ -9,6 +9,7 @@ Rules enforced here, not by the caller:
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -124,6 +125,7 @@ def run(
         completed = subprocess.run(  # noqa: S603 - argv list, shell=False
             [executable, *argv[1:]],
             cwd=str(cwd) if cwd else None,
+            env=_environment(cwd),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -147,6 +149,34 @@ def run(
         stdout=_truncate(completed.stdout or ""),
         stderr=_truncate(completed.stderr or ""),
     )
+
+
+def _environment(cwd: Path | None) -> dict[str, str] | None:
+    """Environment for a spawned command, with git's upward search fenced in.
+
+    git looks for a repository by walking *up* from the working directory, so a
+    stray ``.git`` in a parent (a home directory, say) would silently answer
+    questions asked about a folder that is not a repository at all.
+    ``GIT_CEILING_DIRECTORIES`` stops that ascent. It names directories git may
+    not chdir *into*, and it ignores the starting directory itself, so the entry
+    is the parent of the sandbox root -- git stays free to find a repository
+    anywhere inside the sandbox, and cannot reach one above it.
+    """
+    if cwd is None:
+        return None
+
+    from jarvis.tools.paths import allowed_roots  # local: paths imports config
+
+    resolved = Path(cwd).resolve()
+    boundary = resolved
+    for root in allowed_roots():
+        if resolved == root or root in resolved.parents:
+            boundary = root
+            break
+
+    env = dict(os.environ)
+    env["GIT_CEILING_DIRECTORIES"] = str(boundary.parent)
+    return env
 
 
 def _truncate(text: str) -> str:
