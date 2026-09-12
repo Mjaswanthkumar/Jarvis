@@ -23,11 +23,17 @@ class Role(str, Enum):
 
 
 class ToolCall(BaseModel):
-    """A tool the model asked to run."""
+    """A tool the model asked to run.
+
+    ``signature`` carries a provider-specific opaque token (Gemini's
+    ``thought_signature``) that must be echoed back with the call for
+    multi-step tool use to work. It is base64 so it survives JSON/SQLite.
+    """
 
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     name: str
     args: dict[str, Any] = Field(default_factory=dict)
+    signature: str | None = None
 
 
 class Message(BaseModel):

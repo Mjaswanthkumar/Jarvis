@@ -26,7 +26,7 @@ Open <http://127.0.0.1:8010> and paste your `JARVIS_AUTH_TOKEN` to connect.
 | Variable | Purpose |
 | --- | --- |
 | `GEMINI_API_KEY` | Gemini API key ([AI Studio](https://aistudio.google.com/apikey)) |
-| `GEMINI_MODEL` | Model id, default `gemini-3.8-flash` |
+| `GEMINI_MODEL` | Model id, default `gemini-3.5-flash-lite` |
 | `JARVIS_AUTH_TOKEN` | Shared secret required by every API call — the server refuses to start without it |
 | `JARVIS_HOST` / `JARVIS_PORT` | Bind address, default `127.0.0.1:8010` |
 | `JARVIS_ALLOWED_ROOTS` | Comma-separated filesystem roots Jarvis may inspect (default: your home dir) |

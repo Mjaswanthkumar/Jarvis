@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import json
 import logging
+import random
+import re
 from typing import Any
 
 from jarvis.llm.base import (
@@ -17,6 +21,12 @@ from jarvis.llm.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: Transient failures worth retrying, and how hard to try.
+_RETRY_STATUSES = ("RESOURCE_EXHAUSTED", "UNAVAILABLE", "429", "503")
+_MAX_ATTEMPTS = 3
+_MAX_BACKOFF_SECONDS = 30.0
+_RETRY_DELAY_PATTERN = re.compile(r"retry in ([0-9.]+)s", re.IGNORECASE)
 
 _JSON_TO_GEMINI_TYPE = {
     "object": "OBJECT",
@@ -98,17 +108,46 @@ class GeminiProvider(LLMProvider):
                     ]
                 )
             ]
-        try:
-            response = await client.aio.models.generate_content(
-                model=self._model,
-                contents=[_to_content(m, types) for m in messages],
-                config=types.GenerateContentConfig(**config_kwargs),
-            )
-        except Exception as exc:
-            logger.warning("gemini request failed: %s", exc)
-            raise LLMError(_friendly_error(exc, self._model)) from exc
+        contents = [_to_content(m, types) for m in messages]
+        config = types.GenerateContentConfig(**config_kwargs)
 
-        return _parse_response(response, self._model)
+        last_error: Exception | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                response = await client.aio.models.generate_content(
+                    model=self._model, contents=contents, config=config
+                )
+                return _parse_response(response, self._model)
+            except Exception as exc:
+                last_error = exc
+                if attempt == _MAX_ATTEMPTS - 1 or not _is_retryable(exc):
+                    break
+                delay = _retry_delay(exc, attempt)
+                logger.warning(
+                    "gemini transient failure (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1,
+                    _MAX_ATTEMPTS,
+                    delay,
+                    exc,
+                )
+                await asyncio.sleep(delay)
+
+        assert last_error is not None
+        logger.warning("gemini request failed: %s", last_error)
+        raise LLMError(_friendly_error(last_error, self._model)) from last_error
+
+
+def _is_retryable(exc: Exception) -> bool:
+    text = str(exc)
+    return any(marker in text for marker in _RETRY_STATUSES)
+
+
+def _retry_delay(exc: Exception, attempt: int) -> float:
+    """Honour the server's own retry hint, else exponential backoff + jitter."""
+    match = _RETRY_DELAY_PATTERN.search(str(exc))
+    if match:
+        return min(float(match.group(1)) + 0.5, _MAX_BACKOFF_SECONDS)
+    return min(2.0**attempt + random.uniform(0, 0.5), _MAX_BACKOFF_SECONDS)
 
 
 def _friendly_error(exc: Exception, model: str) -> str:
@@ -122,7 +161,12 @@ def _friendly_error(exc: Exception, model: str) -> str:
     if "NOT_FOUND" in text or "404" in text:
         return f"Gemini model '{model}' does not exist or was retired. Set GEMINI_MODEL to a current model."
     if "RESOURCE_EXHAUSTED" in text or "429" in text:
-        return "Gemini rate limit or quota reached. Try again shortly."
+        return (
+            "Gemini rate limit reached for this model. Wait a moment, or set "
+            "GEMINI_MODEL to a model with more free-tier headroom."
+        )
+    if "UNAVAILABLE" in text or "503" in text:
+        return f"Gemini model '{model}' is overloaded right now. Try again shortly."
     return f"Gemini request failed: {text}"
 
 
@@ -143,9 +187,11 @@ def _to_content(message: Message, types: Any) -> Any:
         if message.content:
             parts.append(types.Part.from_text(text=message.content))
         for call in message.tool_calls:
-            parts.append(
-                types.Part.from_function_call(name=call.name, args=call.args or {})
-            )
+            part = types.Part.from_function_call(name=call.name, args=call.args or {})
+            if call.signature:
+                # Gemini 3 rejects a replayed function call without its signature.
+                part.thought_signature = base64.b64decode(call.signature)
+            parts.append(part)
         if not parts:
             parts.append(types.Part.from_text(text=" "))
         return types.Content(role="model", parts=parts)
@@ -172,8 +218,17 @@ def _parse_response(response: Any, model: str) -> LLMResponse:
                 text_chunks.append(part.text)
             call = getattr(part, "function_call", None)
             if call is not None and getattr(call, "name", None):
+                raw_signature = getattr(part, "thought_signature", None)
                 tool_calls.append(
-                    ToolCall(name=call.name, args=dict(call.args or {}))
+                    ToolCall(
+                        name=call.name,
+                        args=dict(call.args or {}),
+                        signature=(
+                            base64.b64encode(raw_signature).decode()
+                            if raw_signature
+                            else None
+                        ),
+                    )
                 )
     usage = getattr(response, "usage_metadata", None)
     return LLMResponse(

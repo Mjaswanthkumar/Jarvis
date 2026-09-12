@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     )
 
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-3.8-flash", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-3.5-flash-lite", alias="GEMINI_MODEL")
 
     jarvis_auth_token: str = Field(default="", alias="JARVIS_AUTH_TOKEN")
     jarvis_host: str = Field(default="127.0.0.1", alias="JARVIS_HOST")
