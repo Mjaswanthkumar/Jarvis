@@ -73,7 +73,7 @@ class CommandResult:
             "timed_out": self.timed_out,
         }
 
-    def raise_for_status(self) -> "CommandResult":
+    def raise_for_status(self) -> CommandResult:
         if self.timed_out:
             raise TimeoutError(f"`{self.command}` timed out")
         if self.exit_code != 0:

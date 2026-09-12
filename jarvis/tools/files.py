@@ -33,6 +33,7 @@ _MAX_READ_BYTES = 200_000
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("files",),
+    untrusted_output=True,
 )
 def search_files(
     query: str,
@@ -95,6 +96,7 @@ def _build_matcher(query: str):
     description="List the contents of a folder with sizes and modified times.",
     permission=PermissionLevel.READ_ONLY,
     tags=("files",),
+    untrusted_output=True,
 )
 def list_directory(path: str, max_entries: int = 50) -> dict[str, Any]:
     target = resolve_in_sandbox(path)
@@ -120,6 +122,7 @@ def list_directory(path: str, max_entries: int = 50) -> dict[str, Any]:
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("files",),
+    untrusted_output=True,
 )
 def read_text_file(path: str, max_lines: int = 200) -> dict[str, Any]:
     target = resolve_in_sandbox(path)
@@ -151,6 +154,7 @@ def read_text_file(path: str, max_lines: int = 200) -> dict[str, Any]:
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("files",),
+    untrusted_output=True,
 )
 def largest_files(
     root: str | None = None, max_results: int = 10, min_mb: float = 50.0

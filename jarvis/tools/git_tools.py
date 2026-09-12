@@ -36,6 +36,7 @@ def _repo(path: str | None) -> Path:
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("git",),
+    untrusted_output=True,
 )
 def git_status(repo_path: str | None = None) -> dict[str, Any]:
     repo = _repo(repo_path)
@@ -107,6 +108,7 @@ def git_status(repo_path: str | None = None) -> dict[str, Any]:
     description="Recent commits in a repository: sha, author, relative date, subject.",
     permission=PermissionLevel.READ_ONLY,
     tags=("git",),
+    untrusted_output=True,
 )
 def git_log(repo_path: str | None = None, limit: int = 10) -> dict[str, Any]:
     repo = _repo(repo_path)
@@ -132,6 +134,7 @@ def git_log(repo_path: str | None = None, limit: int = 10) -> dict[str, Any]:
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("git",),
+    untrusted_output=True,
 )
 def git_branches(repo_path: str | None = None, limit: int = 30) -> dict[str, Any]:
     repo = _repo(repo_path)
@@ -170,6 +173,7 @@ def git_branches(repo_path: str | None = None, limit: int = 30) -> dict[str, Any
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("git",),
+    untrusted_output=True,
 )
 def git_diff_stat(repo_path: str | None = None, staged: bool = False) -> dict[str, Any]:
     repo = _repo(repo_path)
@@ -206,6 +210,7 @@ def git_diff_stat(repo_path: str | None = None, staged: bool = False) -> dict[st
     ),
     permission=PermissionLevel.CONFIRM_REQUIRED,
     tags=("git", "dev"),
+    untrusted_output=True,
 )
 def run_tests(project_path: str | None = None, framework: str = "auto") -> dict[str, Any]:
     project = resolve_in_sandbox(project_path) if project_path else default_root()

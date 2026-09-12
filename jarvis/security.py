@@ -60,7 +60,7 @@ class PolicyEngine:
         self.read_only_mode = read_only_mode
 
     @classmethod
-    def from_settings(cls, settings: Settings | None = None) -> "PolicyEngine":
+    def from_settings(cls, settings: Settings | None = None) -> PolicyEngine:
         settings = settings or get_settings()
         return cls(
             blocked_tools=_split(settings.jarvis_blocked_tools),

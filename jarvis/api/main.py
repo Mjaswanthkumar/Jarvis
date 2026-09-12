@@ -159,6 +159,7 @@ def _persist_turn(
             event.decision.value,
         )
 
+    suspicious = result.saw_injection_attempt
     pending = [
         store.create_confirmation(
             conversation_id,
@@ -168,12 +169,20 @@ def _persist_turn(
         )
         for call in result.pending_confirmations
     ]
+    if suspicious and pending:
+        logger.warning(
+            "confirmation requested in a turn that read suspicious content: %s",
+            [row["tool"] for row in pending],
+        )
     return ChatResponse(
         reply=result.reply,
         conversation_id=conversation_id,
         tool_events=result.tool_events,
         confirmations=[
-            PendingConfirmation(**{k: row[k] for k in ("id", "tool", "args", "summary")})
+            PendingConfirmation(
+                **{k: row[k] for k in ("id", "tool", "args", "summary")},
+                suspicious=suspicious,
+            )
             for row in pending
         ],
     )

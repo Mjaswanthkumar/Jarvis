@@ -394,6 +394,25 @@ button {
   color: var(--muted);
 }
 
+.confirm-card.suspicious {
+  border-color: var(--bad);
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.confirm-card.suspicious .confirm-head {
+  color: var(--bad);
+}
+
+.confirm-warning {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 107, 107, 0.12);
+  color: var(--bad);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .confirm-state {
   margin-top: 10px;
   font-size: 12px;

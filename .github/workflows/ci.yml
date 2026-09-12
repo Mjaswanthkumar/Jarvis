@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # Jarvis controls Windows: the App Paths registry, EnumWindows and the
+    # process tools only exist here, so the suite runs where it ships.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Unit and integration tests
+        run: python -m pytest -q
+
+      - name: Agent evals (replayed cassette, no API key needed)
+        run: python -m evals --threshold 0.9
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install tools
+        run: pip install ruff
+
+      - name: Ruff
+        run: ruff check jarvis evals tests

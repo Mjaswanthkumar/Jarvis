@@ -9,8 +9,9 @@ from __future__ import annotations
 import inspect
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 
@@ -56,6 +57,10 @@ class ToolSpec:
     func: Callable[..., Any]
     args_model: type[BaseModel]
     tags: tuple[str, ...] = field(default_factory=tuple)
+    #: True when the result can contain text written by someone other than the
+    #: user -- file contents, logs, commit messages, window titles. Those are
+    #: fenced before they reach the model (see jarvis.injection).
+    untrusted_output: bool = False
 
     @property
     def parameters_schema(self) -> dict[str, Any]:
@@ -179,6 +184,7 @@ def tool(
     description: str,
     permission: PermissionLevel,
     tags: tuple[str, ...] = (),
+    untrusted_output: bool = False,
     registry: ToolRegistry | None = None,
 ) -> Callable[[F], F]:
     """Decorator registering a typed function as an agent tool."""
@@ -192,6 +198,7 @@ def tool(
             func=func,
             args_model=_build_args_model(tool_name, func),
             tags=tags,
+            untrusted_output=untrusted_output,
         )
         (registry or REGISTRY).register(spec)
         return func

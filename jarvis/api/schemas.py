@@ -23,6 +23,9 @@ class PendingConfirmation(BaseModel):
     tool: str
     args: dict[str, Any] = Field(default_factory=dict)
     summary: str
+    #: Set when untrusted tool output in the same turn looked like an injection
+    #: attempt -- this action may have been suggested by a file, not the user.
+    suspicious: bool = False
 
 
 class ChatResponse(BaseModel):

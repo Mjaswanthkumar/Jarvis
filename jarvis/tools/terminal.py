@@ -53,6 +53,7 @@ class UnsafeCommandError(PermissionError):
     ),
     permission=PermissionLevel.LOW_RISK,
     tags=("terminal",),
+    untrusted_output=True,
 )
 def run_safe_command(command: str) -> dict[str, Any]:
     argv = validate_command(command)

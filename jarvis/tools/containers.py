@@ -69,6 +69,7 @@ def docker_status() -> dict[str, Any]:
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("docker",),
+    untrusted_output=True,
 )
 def docker_containers(
     include_stopped: bool = False, limit: int = 25
@@ -107,6 +108,7 @@ def _docker_ps(*, all_containers: bool) -> list[dict[str, Any]]:
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("docker",),
+    untrusted_output=True,
 )
 def docker_logs(container: str, tail: int = 100) -> dict[str, Any]:
     name = _safe_name(container, "container")
@@ -128,6 +130,7 @@ def docker_logs(container: str, tail: int = 100) -> dict[str, Any]:
     description="List local Docker images with tag, size and age.",
     permission=PermissionLevel.READ_ONLY,
     tags=("docker",),
+    untrusted_output=True,
 )
 def docker_images(limit: int = 25) -> list[dict[str, Any]]:
     result = shell.run(
@@ -157,6 +160,7 @@ def docker_images(limit: int = 25) -> list[dict[str, Any]]:
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("kubernetes",),
+    untrusted_output=True,
 )
 def k8s_status() -> dict[str, Any]:
     context = shell.run(
@@ -203,6 +207,7 @@ def k8s_status() -> dict[str, Any]:
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("kubernetes",),
+    untrusted_output=True,
 )
 def k8s_pods(
     namespace: str | None = None, all_namespaces: bool = False, limit: int = 30
@@ -236,6 +241,7 @@ def k8s_pods(
     description="Tail the logs of one Kubernetes pod.",
     permission=PermissionLevel.READ_ONLY,
     tags=("kubernetes",),
+    untrusted_output=True,
 )
 def k8s_logs(
     pod: str,

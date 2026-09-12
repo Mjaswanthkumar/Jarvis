@@ -48,17 +48,17 @@ class Message(BaseModel):
     hidden: bool = False
 
     @classmethod
-    def user(cls, content: str, *, hidden: bool = False) -> "Message":
+    def user(cls, content: str, *, hidden: bool = False) -> Message:
         return cls(role=Role.USER, content=content, hidden=hidden)
 
     @classmethod
     def assistant(
         cls, content: str = "", tool_calls: list[ToolCall] | None = None
-    ) -> "Message":
+    ) -> Message:
         return cls(role=Role.ASSISTANT, content=content, tool_calls=tool_calls or [])
 
     @classmethod
-    def tool(cls, tool_name: str, content: str) -> "Message":
+    def tool(cls, tool_name: str, content: str) -> Message:
         return cls(role=Role.TOOL, tool_name=tool_name, content=content)
 
 

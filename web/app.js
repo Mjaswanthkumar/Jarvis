@@ -232,9 +232,17 @@
     const wrapper = document.createElement("div");
     wrapper.className = "msg assistant";
     const card = document.createElement("div");
-    card.className = "bubble confirm-card";
-    card.innerHTML = `<div class="confirm-head">⚠ Confirmation required</div>
-      <div class="confirm-summary">${escapeHtml(confirmation.summary)}</div>`;
+    card.className = `bubble confirm-card${confirmation.suspicious ? " suspicious" : ""}`;
+    const heading = confirmation.suspicious
+      ? "⛔ Confirmation required — possible prompt injection"
+      : "⚠ Confirmation required";
+    card.innerHTML = `<div class="confirm-head">${heading}</div>
+      <div class="confirm-summary">${escapeHtml(confirmation.summary)}</div>` +
+      (confirmation.suspicious
+        ? `<div class="confirm-warning">Content Jarvis just read contained text
+           that tried to issue instructions. This action may have been suggested
+           by that content rather than by you.</div>`
+        : "");
 
     const actions = document.createElement("div");
     actions.className = "confirm-actions";

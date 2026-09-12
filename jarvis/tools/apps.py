@@ -163,6 +163,7 @@ def close_application(name: str, force: bool = False) -> dict[str, Any]:
     ),
     permission=PermissionLevel.READ_ONLY,
     tags=("apps",),
+    untrusted_output=True,
 )
 def list_open_windows(limit: int = 25) -> list[dict[str, Any]]:
     if sys.platform != "win32":  # pragma: no cover - Windows-only feature

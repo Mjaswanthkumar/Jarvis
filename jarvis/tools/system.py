@@ -175,6 +175,7 @@ def _primary_ip() -> str | None:
     "Optionally filter by a case-insensitive name substring.",
     permission=PermissionLevel.READ_ONLY,
     tags=("system", "process"),
+    untrusted_output=True,
 )
 def list_processes(
     sort_by: str = "cpu", limit: int = 10, name_contains: str | None = None

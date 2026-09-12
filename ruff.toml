@@ -1,0 +1,13 @@
+line-length = 90
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
+ignore = [
+    "E501",   # long lines are caught by the formatter's judgement, not a hard stop
+    "B008",   # FastAPI's Depends()/File() in defaults is the documented pattern
+    "SIM105", # contextlib.suppress is not always clearer than try/except
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["B011"]

@@ -8,3 +8,6 @@ __pycache__/
 data/
 node_modules/
 dist/
+
+# Personal study notes -- kept local, never published
+knowledge/
