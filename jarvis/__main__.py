@@ -42,15 +42,26 @@ def main() -> None:
     logging.getLogger(__name__).info("logging to %s", log_path)
 
     info = pairing_info(
-        settings.jarvis_host, settings.jarvis_port, settings.jarvis_auth_token
+        settings.jarvis_host,
+        settings.jarvis_port,
+        settings.jarvis_auth_token,
+        settings.scheme,
     )
     print(startup_banner(info, settings.jarvis_auth_token), flush=True)
+
+    tls: dict[str, str] = {}
+    if settings.tls_enabled:
+        tls = {
+            "ssl_certfile": settings.jarvis_tls_certfile,
+            "ssl_keyfile": settings.jarvis_tls_keyfile,
+        }
 
     uvicorn.run(
         "jarvis.api.main:app",
         host=settings.jarvis_host,
         port=settings.jarvis_port,
         log_level="info",
+        **tls,
     )
 
 

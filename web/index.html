@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Jarvis" />
-    <link rel="stylesheet" href="/static/style.css?v=3" />
+    <link rel="stylesheet" href="/static/style.css?v=4" />
   </head>
   <body>
     <div id="gate" class="gate">
@@ -43,6 +43,14 @@
         <div class="status">
           <span class="dot" id="status-dot"></span>
           <span id="status-text">connecting</span>
+          <button
+            class="icon-btn"
+            id="speak-toggle"
+            title="Speak replies aloud"
+            aria-pressed="false"
+          >
+            🔈
+          </button>
           <button class="icon-btn" id="logout" title="Disconnect">⏻</button>
         </div>
       </header>
@@ -81,7 +89,21 @@
               </div>
             </div>
           </div>
+          <div class="voice-status" id="voice-status" hidden>
+            <span class="pulse"></span>
+            <span id="voice-text">Listening…</span>
+          </div>
           <form class="composer" id="composer">
+            <button
+              type="button"
+              class="mic"
+              id="mic"
+              title="Hold a conversation by voice"
+              aria-label="Speak to Jarvis"
+              hidden
+            >
+              🎙
+            </button>
             <input
               id="input"
               type="text"
@@ -101,6 +123,7 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=3"></script>
+    <script src="/static/voice.js?v=4"></script>
+    <script src="/static/app.js?v=4"></script>
   </body>
 </html>

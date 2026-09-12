@@ -41,14 +41,16 @@ class PairingInfo:
         return self.lan_url or self.local_url
 
 
-def pairing_info(host: str, port: int, token: str) -> PairingInfo:
+def pairing_info(
+    host: str, port: int, token: str, scheme: str = "http"
+) -> PairingInfo:
     """Build the URLs shown at startup.
 
     The pairing URL carries the token in the *fragment*, which browsers never
     send to the server and which the client strips from the address bar as soon
     as it has stored it.
     """
-    local_url = f"http://127.0.0.1:{port}"
+    local_url = f"{scheme}://127.0.0.1:{port}"
     if is_loopback(host):
         return PairingInfo(local_url=local_url, lan_url=None, pairing_url=None)
 
@@ -56,7 +58,7 @@ def pairing_info(host: str, port: int, token: str) -> PairingInfo:
     if address is None:
         return PairingInfo(local_url=local_url, lan_url=None, pairing_url=None)
 
-    lan_url = f"http://{address}:{port}"
+    lan_url = f"{scheme}://{address}:{port}"
     return PairingInfo(
         local_url=local_url, lan_url=lan_url, pairing_url=f"{lan_url}/#t={token}"
     )
@@ -76,6 +78,7 @@ def qr_ascii(data: str) -> str:
 def startup_banner(info: PairingInfo, token: str) -> str:
     """The block printed when Jarvis starts."""
     lines = ["", "  JARVIS is running", "", f"  This PC     {info.local_url}"]
+    secure = info.local_url.startswith("https")
     if info.lan_url:
         lines += [
             f"  Phone/LAN   {info.lan_url}",
@@ -92,6 +95,12 @@ def startup_banner(info: PairingInfo, token: str) -> str:
             "",
             "  Bound to loopback only. Set JARVIS_HOST=0.0.0.0 to reach it",
             "  from your phone on the same network.",
+        ]
+    if info.lan_url and not secure:
+        lines += [
+            "  Voice input needs a secure origin: it works on this PC, but not",
+            "  over plain HTTP on the phone. Set JARVIS_TLS_CERTFILE and",
+            "  JARVIS_TLS_KEYFILE for HTTPS, or put Jarvis behind a tunnel.",
         ]
     lines.append("")
     return "\n".join(lines)

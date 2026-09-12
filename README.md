@@ -21,6 +21,20 @@ copy .env.example .env     # then set GEMINI_API_KEY and JARVIS_AUTH_TOKEN
 
 Open <http://127.0.0.1:8010> and paste your `JARVIS_AUTH_TOKEN` to connect.
 
+### Voice
+
+Click the 🎙 button (or the 🔊 toggle to have replies read back). Speech
+recognition and synthesis run **in the browser** — no audio is uploaded to
+Jarvis or to Gemini. After a spoken question, Jarvis re-opens the microphone
+automatically so you can keep talking; typing, or a pending confirmation, ends
+that hands-free loop.
+
+Browsers only allow microphone access on a *secure origin*, so voice works on
+`127.0.0.1` out of the box but not over plain HTTP from a phone. For voice on a
+phone, set `JARVIS_TLS_CERTFILE` and `JARVIS_TLS_KEYFILE` (e.g. a
+[mkcert](https://github.com/FiloSottile/mkcert) certificate) and Jarvis serves
+HTTPS, with the pairing QR pointing at the `https://` URL.
+
 ### From your phone
 
 Set `JARVIS_HOST=0.0.0.0` and restart. Jarvis prints its LAN address and a QR
@@ -42,6 +56,7 @@ least 24 characters.
 | `JARVIS_HOST` / `JARVIS_PORT` | Bind address, default `127.0.0.1:8010` |
 | `JARVIS_ALLOWED_ROOTS` | Comma-separated filesystem roots Jarvis may inspect (default: your home dir) |
 | `JARVIS_DATA_DIR` | Where `jarvis.db` lives (default `~/.jarvis`) |
+| `JARVIS_TLS_CERTFILE` / `JARVIS_TLS_KEYFILE` | Serve HTTPS — required for voice input from a phone |
 
 ## Security model
 
@@ -161,4 +176,4 @@ hard-coded.
 3. ✅ Git, Docker, Kubernetes tools
 4. Confirmation flow, richer policy, logging
 5. ✅ Mobile interface, QR pairing, remote hardening
-6. Voice and long-term memory
+6. Voice ✅ · long-term memory, proactive triggers (in progress)

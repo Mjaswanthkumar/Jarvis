@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     #: Comma-separated filesystem roots Jarvis may inspect. Empty -> home only.
     jarvis_allowed_roots: str = Field(default="", alias="JARVIS_ALLOWED_ROOTS")
 
+    #: Optional TLS. Browsers only allow microphone access on a secure origin,
+    #: so voice input from a phone needs these set.
+    jarvis_tls_certfile: str = Field(default="", alias="JARVIS_TLS_CERTFILE")
+    jarvis_tls_keyfile: str = Field(default="", alias="JARVIS_TLS_KEYFILE")
+
     #: Tools to disable entirely, by name (comma-separated).
     jarvis_blocked_tools: str = Field(default="", alias="JARVIS_BLOCKED_TOOLS")
 
@@ -41,6 +46,14 @@ class Settings(BaseSettings):
     jarvis_data_dir: Path = Field(
         default_factory=lambda: Path.home() / ".jarvis", alias="JARVIS_DATA_DIR"
     )
+
+    @property
+    def tls_enabled(self) -> bool:
+        return bool(self.jarvis_tls_certfile and self.jarvis_tls_keyfile)
+
+    @property
+    def scheme(self) -> str:
+        return "https" if self.tls_enabled else "http"
 
     @property
     def allowed_roots(self) -> list[Path]:

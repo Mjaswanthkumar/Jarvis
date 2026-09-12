@@ -26,7 +26,13 @@
     metrics: $("metrics"),
     metricsToggle: $("metrics-toggle"),
     gateHint: $("gate-hint"),
+    mic: $("mic"),
+    speakToggle: $("speak-toggle"),
+    voiceStatus: $("voice-status"),
+    voiceText: $("voice-text"),
   };
+
+  const SPEAK_KEY = "jarvis.speak";
 
   const REQUEST_TIMEOUT_MS = 45000;
 
@@ -42,6 +48,10 @@
   let token = pairedToken || storageGet(TOKEN_KEY) || "";
   let conversationId = storageGet(CONV_KEY) || null;
   let pollTimer = null;
+  const voice = window.JarvisVoice;
+  let speakReplies = storageGet(SPEAK_KEY) === "1";
+  //: True while a voice turn is in flight, so we know to re-open the mic.
+  let handsFree = false;
 
   function storageGet(key) {
     try {
@@ -292,15 +302,106 @@
       typing.remove();
       addMessage("assistant", renderMarkdown(data.reply), data.tool_events);
       (data.confirmations || []).forEach(addConfirmation);
+      // A pending confirmation needs a tap, so don't re-open the mic over it.
+      announce(data.reply, !(data.confirmations || []).length);
       poll();
     } catch (error) {
       typing.remove();
+      handsFree = false;
       if (error.unauthorized) return logout("Session expired.");
       addMessage("assistant", `<span class="error">${escapeHtml(error.message)}</span>`);
     } finally {
       els.send.disabled = false;
-      els.input.focus();
+      if (!isTouchDevice()) els.input.focus();
     }
+  }
+
+  /* ---------- voice ---------- */
+
+  /** Speak a reply, and hand the turn back to the mic if the user spoke first. */
+  function announce(text, mayContinue) {
+    const resume = handsFree && mayContinue;
+    handsFree = false;
+    if (!speakReplies) {
+      if (resume) setTimeout(() => voice.start(), 350);
+      return;
+    }
+    voice.speak(text, () => {
+      if (resume) setTimeout(() => voice.start(), 250);
+    });
+  }
+
+  function showVoiceStatus(text, listening) {
+    els.voiceStatus.hidden = false;
+    els.voiceText.textContent = text;
+    els.voiceStatus.classList.toggle("listening", Boolean(listening));
+  }
+
+  function hideVoiceStatus(delay = 0) {
+    setTimeout(() => {
+      els.voiceStatus.hidden = true;
+      els.voiceStatus.classList.remove("listening");
+    }, delay);
+  }
+
+  function setupVoice() {
+    if (voice.canSpeak) {
+      els.speakToggle.hidden = false;
+      updateSpeakButton();
+      els.speakToggle.addEventListener("click", () => {
+        speakReplies = !speakReplies;
+        storageSet(SPEAK_KEY, speakReplies ? "1" : null);
+        if (!speakReplies) voice.stopSpeaking();
+        updateSpeakButton();
+      });
+    } else {
+      els.speakToggle.hidden = true;
+    }
+
+    if (!voice.canListen) {
+      els.mic.hidden = true;
+      return;
+    }
+    els.mic.hidden = false;
+
+    voice
+      .on("start", () => {
+        els.mic.classList.add("active");
+        els.input.value = "";
+        showVoiceStatus("Listening…", true);
+      })
+      .on("partial", (text) => {
+        els.input.value = text;
+        if (text) showVoiceStatus(text, true);
+      })
+      .on("error", (message) => {
+        handsFree = false;
+        els.mic.classList.remove("active");
+        showVoiceStatus(message, false);
+        hideVoiceStatus(2500);
+      })
+      .on("end", (finalText) => {
+        els.mic.classList.remove("active");
+        if (!finalText) return hideVoiceStatus(1200);
+        hideVoiceStatus(0);
+        els.input.value = "";
+        handsFree = true;
+        send(finalText);
+      });
+
+    els.mic.addEventListener("click", () => {
+      voice.stopSpeaking();
+      voice.toggle();
+    });
+  }
+
+  function updateSpeakButton() {
+    els.speakToggle.textContent = speakReplies ? "🔊" : "🔈";
+    els.speakToggle.setAttribute("aria-pressed", String(speakReplies));
+    els.speakToggle.title = speakReplies
+      ? "Replies are spoken aloud"
+      : "Speak replies aloud";
+    els.speakToggle.classList.toggle("on", speakReplies);
   }
 
   async function loadHistory() {
@@ -352,6 +453,9 @@
 
   function logout(reason) {
     clearInterval(pollTimer);
+    handsFree = false;
+    voice.stop();
+    voice.stopSpeaking();
     storageSet(TOKEN_KEY, null);
     token = "";
     els.app.hidden = true;
@@ -377,6 +481,8 @@
     event.preventDefault();
     const message = els.input.value.trim();
     if (!message) return;
+    if (voice.listening) voice.stop();
+    voice.stopSpeaking();
     els.input.value = "";
     send(message);
   });
@@ -384,13 +490,20 @@
   els.logout.addEventListener("click", () => logout(""));
 
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && token && !els.app.hidden) poll();
+    if (document.visibilityState === "visible") {
+      if (token && !els.app.hidden) poll();
+    } else {
+      voice.stop();
+      voice.stopSpeaking();
+    }
   });
 
   els.metricsToggle.addEventListener("click", () => {
     const collapsed = els.metrics.classList.toggle("collapsed");
     els.metricsToggle.setAttribute("aria-expanded", String(!collapsed));
   });
+
+  setupVoice();
 
   if (pairedToken) els.gateHint.hidden = false;
   if (token) {

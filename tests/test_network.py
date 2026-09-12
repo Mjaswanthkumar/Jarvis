@@ -98,3 +98,47 @@ def test_a_weak_token_blocks_network_exposure() -> None:
 
 def test_a_strong_token_allows_network_exposure() -> None:
     check_startup_security(_settings(JARVIS_HOST="0.0.0.0"))
+
+
+def test_tls_is_off_by_default() -> None:
+    settings = _settings()
+    assert settings.tls_enabled is False
+    assert settings.scheme == "http"
+
+
+def test_tls_needs_both_cert_and_key() -> None:
+    assert not _settings(JARVIS_TLS_CERTFILE="cert.pem").tls_enabled
+    assert not _settings(JARVIS_TLS_KEYFILE="key.pem").tls_enabled
+
+
+def test_tls_switches_the_scheme() -> None:
+    settings = _settings(JARVIS_TLS_CERTFILE="cert.pem", JARVIS_TLS_KEYFILE="key.pem")
+    assert settings.tls_enabled
+    assert settings.scheme == "https"
+
+
+def test_pairing_urls_follow_the_scheme(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Voice needs a secure origin, so the QR must hand out an https URL."""
+    monkeypatch.setattr("jarvis.network.lan_ip", lambda: "192.168.1.20")
+    info = pairing_info("0.0.0.0", 8010, "tok", "https")
+    assert info.lan_url == "https://192.168.1.20:8010"
+    assert info.pairing_url.startswith("https://")
+    assert info.local_url == "https://127.0.0.1:8010"
+
+
+def test_plain_http_banner_warns_that_voice_will_not_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("jarvis.network.lan_ip", lambda: "192.168.1.20")
+    banner = startup_banner(pairing_info("0.0.0.0", 8010, STRONG_TOKEN), STRONG_TOKEN)
+    assert "Voice input needs a secure origin" in banner
+
+
+def test_https_banner_omits_the_voice_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("jarvis.network.lan_ip", lambda: "192.168.1.20")
+    banner = startup_banner(
+        pairing_info("0.0.0.0", 8010, STRONG_TOKEN, "https"), STRONG_TOKEN
+    )
+    assert "Voice input needs a secure origin" not in banner
