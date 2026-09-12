@@ -293,3 +293,64 @@ def test_hidden_messages_stay_out_of_the_transcript(client: TestClient) -> None:
         "visible question",
         "visible answer",
     ]
+
+
+def test_security_headers_are_set_on_the_page(client: TestClient) -> None:
+    response = client.get("/ping")
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+
+
+def test_api_responses_are_never_cached(client: TestClient) -> None:
+    """Machine state must not sit in a phone or proxy cache."""
+    response = client.get("/api/system", headers=HEADERS)
+    assert response.headers["Cache-Control"] == "no-store"
+
+
+def test_manifest_is_served_for_home_screen_install(client: TestClient) -> None:
+    response = client.get("/manifest.webmanifest")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["display"] == "standalone"
+    assert body["start_url"] == "/"
+
+
+def test_repeated_bad_tokens_lock_the_client_out(client: TestClient) -> None:
+    from jarvis.api.deps import MAX_FAILURES, THROTTLE
+
+    THROTTLE.reset()
+    try:
+        for _ in range(MAX_FAILURES):
+            assert (
+                client.get("/api/health", headers={"X-Jarvis-Token": "wrong"}).status_code
+                == 401
+            )
+
+        locked = client.get("/api/health", headers={"X-Jarvis-Token": "wrong"})
+        assert locked.status_code == 429
+        assert "Retry-After" in locked.headers
+
+        # A valid token is refused too while the lockout stands.
+        assert client.get("/api/health", headers=HEADERS).status_code == 429
+    finally:
+        THROTTLE.reset()
+
+
+def test_a_successful_login_clears_earlier_failures(client: TestClient) -> None:
+    from jarvis.api.deps import MAX_FAILURES, THROTTLE
+
+    THROTTLE.reset()
+    try:
+        for _ in range(MAX_FAILURES - 1):
+            client.get("/api/health", headers={"X-Jarvis-Token": "wrong"})
+        assert client.get("/api/health", headers=HEADERS).status_code == 200
+
+        for _ in range(MAX_FAILURES - 1):
+            assert (
+                client.get("/api/health", headers={"X-Jarvis-Token": "wrong"}).status_code
+                == 401
+            )
+    finally:
+        THROTTLE.reset()

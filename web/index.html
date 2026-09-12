@@ -5,13 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0b0f14" />
     <title>Jarvis</title>
-    <link rel="stylesheet" href="/static/style.css?v=2" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/static/icon.svg" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Jarvis" />
+    <link rel="stylesheet" href="/static/style.css?v=3" />
   </head>
   <body>
     <div id="gate" class="gate">
       <form class="gate-card" id="gate-form">
         <h1>JARVIS</h1>
         <p>Enter your access token to connect to this PC.</p>
+        <p class="gate-hint" id="gate-hint" hidden>Pairing from the QR code…</p>
         <input
           id="gate-token"
           type="password"
@@ -39,6 +46,10 @@
           <button class="icon-btn" id="logout" title="Disconnect">⏻</button>
         </div>
       </header>
+
+      <button class="metrics-toggle" id="metrics-toggle" aria-expanded="true">
+        Vitals
+      </button>
 
       <section class="metrics" id="metrics">
         <div class="metric" data-key="cpu">
@@ -81,7 +92,7 @@
           </form>
         </section>
 
-        <aside class="side">
+        <aside class="side" id="side">
           <h2>Recent tool activity</h2>
           <ul class="activity" id="activity">
             <li class="empty">No tool calls yet.</li>
@@ -90,6 +101,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=2"></script>
+    <script src="/static/app.js?v=3"></script>
   </body>
 </html>

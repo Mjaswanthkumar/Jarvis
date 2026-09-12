@@ -21,6 +21,17 @@ copy .env.example .env     # then set GEMINI_API_KEY and JARVIS_AUTH_TOKEN
 
 Open <http://127.0.0.1:8010> and paste your `JARVIS_AUTH_TOKEN` to connect.
 
+### From your phone
+
+Set `JARVIS_HOST=0.0.0.0` and restart. Jarvis prints its LAN address and a QR
+code; scan it and the phone pairs itself. The token travels in the URL
+*fragment*, which browsers never send to a server, and the client strips it from
+the address bar once stored. On the phone, "Add to Home Screen" installs it as a
+standalone app.
+
+Jarvis refuses to bind to a non-loopback address unless `JARVIS_AUTH_TOKEN` is at
+least 24 characters.
+
 ## Configuration
 
 | Variable | Purpose |
@@ -58,6 +69,14 @@ does *not* run it. It stores the exact call, returns a single-use confirmation
 id, and the UI shows an Approve/Cancel card. `POST /api/confirm` then executes
 **that stored call** — not a fresh one from the model — so what runs is exactly
 what the user saw. Ids are single-use: a replay returns 409.
+
+**Remote exposure.** Binding beyond loopback requires a 24+ character token, or
+the server refuses to start. Failed authentications are rate limited per client
+(8 failures in 5 minutes locks that address out for 5 minutes, valid token
+included). Every response carries `nosniff`, `X-Frame-Options: DENY`,
+`Referrer-Policy: no-referrer` and a same-origin CSP; `/api` responses are
+`no-store`. Jarvis speaks plain HTTP, so treat it as a *trusted-LAN* service --
+put it behind a tunnel before exposing it to the internet.
 
 **Audit.** Every tool call is written to SQLite with its permission level, policy
 decision, arguments, duration and error, and to a rotating log file in
@@ -117,6 +136,7 @@ hard-coded.
 | Endpoint | Description |
 | --- | --- |
 | `GET /ping` | Unauthenticated liveness check |
+| `GET /manifest.webmanifest` | PWA manifest for home-screen install |
 | `GET /api/health` | Version, provider, tool count |
 | `GET /api/system` | Live CPU/RAM/disk/battery snapshot |
 | `GET /api/tools` | Tool catalogue with permission levels |
@@ -140,5 +160,5 @@ hard-coded.
 2. ✅ Application / file control
 3. ✅ Git, Docker, Kubernetes tools
 4. Confirmation flow, richer policy, logging
-5. Remote access hardening for mobile
+5. ✅ Mobile interface, QR pairing, remote hardening
 6. Voice and long-term memory

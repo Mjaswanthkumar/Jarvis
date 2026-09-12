@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -195,6 +195,14 @@ def activity(limit: int = 20, store: Store = Depends(get_store)) -> list[dict[st
     return store.recent_tool_calls(limit=max(1, min(limit, 100)))
 
 
+#: Only same-origin assets plus inline styles/scripts the page ships itself.
+_CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; connect-src 'self'; form-action 'none'; "
+    "frame-ancestors 'none'; base-uri 'none'"
+)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Jarvis",
@@ -202,6 +210,19 @@ def create_app() -> FastAPI:
         description="AI-powered personal PC agent",
     )
     app.include_router(api)
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next: Any) -> Response:
+        """Harden the responses -- Jarvis may be served over a plain LAN."""
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = _CONTENT_SECURITY_POLICY
+        if request.url.path.startswith("/api"):
+            # Machine state is never cacheable, least of all by a shared proxy.
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.get("/ping", include_in_schema=False)
     def ping() -> dict[str, str]:
@@ -214,6 +235,14 @@ def create_app() -> FastAPI:
         @app.get("/", include_in_schema=False)
         def index() -> FileResponse:
             return FileResponse(WEB_DIR / "index.html")
+
+        @app.get("/manifest.webmanifest", include_in_schema=False)
+        def manifest() -> FileResponse:
+            """Served from the root so "Add to Home Screen" scopes correctly."""
+            return FileResponse(
+                WEB_DIR / "manifest.webmanifest",
+                media_type="application/manifest+json",
+            )
 
     return app
 

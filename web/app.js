@@ -22,9 +22,24 @@
     input: $("input"),
     send: $("send"),
     activity: $("activity"),
+    side: $("side"),
+    metrics: $("metrics"),
+    metricsToggle: $("metrics-toggle"),
+    gateHint: $("gate-hint"),
   };
 
-  let token = storageGet(TOKEN_KEY) || "";
+  const REQUEST_TIMEOUT_MS = 45000;
+
+  /** Read a token handed over by the pairing QR code, then scrub the URL. */
+  function tokenFromFragment() {
+    const match = /[#&]t=([^&]+)/.exec(window.location.hash || "");
+    if (!match) return "";
+    history.replaceState(null, "", window.location.pathname);
+    return decodeURIComponent(match[1]);
+  }
+
+  const pairedToken = tokenFromFragment();
+  let token = pairedToken || storageGet(TOKEN_KEY) || "";
   let conversationId = storageGet(CONV_KEY) || null;
   let pollTimer = null;
 
@@ -45,14 +60,29 @@
   }
 
   async function api(path, options = {}) {
-    const response = await fetch(`/api${path}`, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Jarvis-Token": token,
-        ...(options.headers || {}),
-      },
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let response;
+    try {
+      response = await fetch(`/api${path}`, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Jarvis-Token": token,
+          ...(options.headers || {}),
+        },
+      });
+    } catch (error) {
+      throw new Error(
+        error.name === "AbortError" ? "request timed out" : "cannot reach this PC"
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+    if (response.status === 429) {
+      throw new Error("too many attempts -- wait a few minutes and retry");
+    }
     if (response.status === 401) {
       const error = new Error("unauthorized");
       error.unauthorized = true;
@@ -304,9 +334,20 @@
     setStatus(true, flags.length ? `online · ${flags.join(" · ")}` : "online");
     await loadHistory();
     await poll();
+    startPolling();
+    if (!isTouchDevice()) els.input.focus();
+  }
+
+  function isTouchDevice() {
+    return window.matchMedia("(pointer: coarse)").matches;
+  }
+
+  /** Polling costs battery on a phone, so only poll a visible page. */
+  function startPolling() {
     clearInterval(pollTimer);
-    pollTimer = setInterval(poll, POLL_MS);
-    els.input.focus();
+    pollTimer = setInterval(() => {
+      if (document.visibilityState === "visible") poll();
+    }, POLL_MS);
   }
 
   function logout(reason) {
@@ -342,7 +383,17 @@
 
   els.logout.addEventListener("click", () => logout(""));
 
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && token && !els.app.hidden) poll();
+  });
+
+  els.metricsToggle.addEventListener("click", () => {
+    const collapsed = els.metrics.classList.toggle("collapsed");
+    els.metricsToggle.setAttribute("aria-expanded", String(!collapsed));
+  });
+
+  if (pairedToken) els.gateHint.hidden = false;
   if (token) {
-    connect(token).catch(() => logout(""));
+    connect(token).catch(() => logout(pairedToken ? "Pairing link expired." : ""));
   }
 })();
