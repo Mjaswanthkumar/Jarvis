@@ -37,6 +37,10 @@ class ConfirmRequest(BaseModel):
     approve: bool
 
 
+class TranscriptionResponse(BaseModel):
+    text: str
+
+
 class HealthResponse(BaseModel):
     status: str
     version: str
@@ -44,6 +48,8 @@ class HealthResponse(BaseModel):
     llm_configured: bool
     tool_count: int
     read_only_mode: bool = False
+    #: True when the server can transcribe audio for browsers that cannot.
+    transcription: bool = False
 
 
 class ToolInfo(BaseModel):

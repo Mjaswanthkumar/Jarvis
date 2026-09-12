@@ -354,3 +354,111 @@ def test_a_successful_login_clears_earlier_failures(client: TestClient) -> None:
             )
     finally:
         THROTTLE.reset()
+
+
+def _stub_transcription(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
+    from jarvis.llm.gemini import GeminiProvider
+
+    async def fake_transcribe(self, audio: bytes, mime_type: str) -> str:
+        assert audio and mime_type
+        return text
+
+    monkeypatch.setattr(GeminiProvider, "supports_transcription", True)
+    monkeypatch.setattr(GeminiProvider, "transcribe", fake_transcribe)
+
+
+def test_transcribe_returns_text(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_transcription(monkeypatch, "  open notepad  ")
+    response = client.post(
+        "/api/transcribe",
+        headers=HEADERS,
+        files={"audio": ("speech.webm", b"fake-audio-bytes", "audio/webm")},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"text": "open notepad"}
+
+
+def test_transcribe_requires_auth(client: TestClient) -> None:
+    response = client.post(
+        "/api/transcribe",
+        files={"audio": ("speech.webm", b"x", "audio/webm")},
+    )
+    assert response.status_code == 401
+
+
+def test_transcribe_rejects_non_audio(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An upload endpoint must not accept whatever a caller feels like sending."""
+    _stub_transcription(monkeypatch, "x")
+    response = client.post(
+        "/api/transcribe",
+        headers=HEADERS,
+        files={"audio": ("payload.exe", b"MZ\x90\x00", "application/octet-stream")},
+    )
+    assert response.status_code == 415
+
+
+def test_transcribe_accepts_a_codec_parameter(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_transcription(monkeypatch, "hello")
+    response = client.post(
+        "/api/transcribe",
+        headers=HEADERS,
+        files={"audio": ("s.webm", b"bytes", "audio/webm;codecs=opus")},
+    )
+    assert response.status_code == 200
+
+
+def test_transcribe_rejects_an_empty_recording(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_transcription(monkeypatch, "x")
+    response = client.post(
+        "/api/transcribe",
+        headers=HEADERS,
+        files={"audio": ("s.webm", b"", "audio/webm")},
+    )
+    assert response.status_code == 400
+
+
+def test_transcribe_rejects_oversized_audio(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from jarvis.api.main import _MAX_AUDIO_BYTES
+
+    _stub_transcription(monkeypatch, "x")
+    response = client.post(
+        "/api/transcribe",
+        headers=HEADERS,
+        files={"audio": ("s.webm", b"0" * (_MAX_AUDIO_BYTES + 10), "audio/webm")},
+    )
+    assert response.status_code == 413
+
+
+def test_transcribe_reports_provider_failure(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from jarvis.llm.base import LLMError
+    from jarvis.llm.gemini import GeminiProvider
+
+    async def failing(self, audio: bytes, mime_type: str) -> str:
+        raise LLMError("Gemini rate limit reached for this model.")
+
+    monkeypatch.setattr(GeminiProvider, "supports_transcription", True)
+    monkeypatch.setattr(GeminiProvider, "transcribe", failing)
+
+    response = client.post(
+        "/api/transcribe",
+        headers=HEADERS,
+        files={"audio": ("s.webm", b"bytes", "audio/webm")},
+    )
+    assert response.status_code == 502
+    assert "rate limit" in response.json()["detail"]
+
+
+def test_health_advertises_transcription_support(client: TestClient) -> None:
+    assert "transcription" in client.get("/api/health", headers=HEADERS).json()

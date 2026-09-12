@@ -344,7 +344,26 @@
     }, delay);
   }
 
+  /** Upload a recording for server-side transcription. */
+  async function transcribe(blob) {
+    const form = new FormData();
+    const extension = blob.type.includes("mp4") ? "mp4" : blob.type.split("/")[1];
+    form.append("audio", blob, `speech.${extension}`);
+
+    const response = await fetch("/api/transcribe", {
+      method: "POST",
+      headers: { "X-Jarvis-Token": token },
+      body: form,
+    });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new Error(detail.detail || "could not transcribe that");
+    }
+    return (await response.json()).text;
+  }
+
   function setupVoice() {
+    voice.transcriber = transcribe;
     if (voice.canSpeak) {
       els.speakToggle.hidden = false;
       updateSpeakButton();
@@ -368,17 +387,27 @@
       .on("start", () => {
         els.mic.classList.add("active");
         els.input.value = "";
-        showVoiceStatus("Listening…", true);
+        showVoiceStatus(
+          voice.mode === "recorder" ? "Recording… tap 🎙 when done" : "Listening…",
+          true
+        );
       })
       .on("partial", (text) => {
         els.input.value = text;
         if (text) showVoiceStatus(text, true);
       })
+      .on("fallback", () => {
+        showVoiceStatus("Using Jarvis to transcribe in this browser…", false);
+      })
+      .on("transcribing", () => {
+        els.mic.classList.remove("active");
+        showVoiceStatus("Transcribing…", false);
+      })
       .on("error", (message) => {
         handsFree = false;
         els.mic.classList.remove("active");
         showVoiceStatus(message, false);
-        hideVoiceStatus(2500);
+        hideVoiceStatus(3000);
       })
       .on("end", (finalText) => {
         els.mic.classList.remove("active");

@@ -97,3 +97,17 @@ class LLMProvider(ABC):
     @abstractmethod
     def is_configured(self) -> bool:
         """True when credentials are present and the provider can be used."""
+
+    @property
+    def supports_transcription(self) -> bool:
+        """True when :meth:`transcribe` is implemented by this backend."""
+        return False
+
+    async def transcribe(self, audio: bytes, mime_type: str) -> str:
+        """Turn recorded speech into text.
+
+        Optional: browsers with a working Web Speech API never need this. It
+        exists for the ones that do not (Brave ships no speech API key), so
+        voice input does not depend on which browser the user opened.
+        """
+        raise LLMError(f"{self.name} does not support transcription")

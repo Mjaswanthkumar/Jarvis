@@ -28,6 +28,13 @@ _MAX_ATTEMPTS = 3
 _MAX_BACKOFF_SECONDS = 30.0
 _RETRY_DELAY_PATTERN = re.compile(r"retry in ([0-9.]+)s", re.IGNORECASE)
 
+_NO_SPEECH = "(NO SPEECH)"
+_TRANSCRIBE_PROMPT = (
+    "Transcribe the spoken words in this audio verbatim. Return only the "
+    "transcript, with no commentary, quotes or formatting. If there is no "
+    f"intelligible speech, return exactly {_NO_SPEECH}."
+)
+
 _JSON_TO_GEMINI_TYPE = {
     "object": "OBJECT",
     "array": "ARRAY",
@@ -66,6 +73,36 @@ class GeminiProvider(LLMProvider):
 
     def is_configured(self) -> bool:
         return bool(self._api_key)
+
+    @property
+    def supports_transcription(self) -> bool:
+        return self.is_configured()
+
+    async def transcribe(self, audio: bytes, mime_type: str) -> str:
+        """Transcribe recorded speech with Gemini's audio input."""
+        from google.genai import types
+
+        client = self._get_client()
+        try:
+            response = await client.aio.models.generate_content(
+                model=self._model,
+                contents=[
+                    types.Content(
+                        role="user",
+                        parts=[
+                            types.Part.from_text(text=_TRANSCRIBE_PROMPT),
+                            types.Part.from_bytes(data=audio, mime_type=mime_type),
+                        ],
+                    )
+                ],
+                config=types.GenerateContentConfig(temperature=0.0),
+            )
+        except Exception as exc:
+            logger.warning("gemini transcription failed: %s", exc)
+            raise LLMError(_friendly_error(exc, self._model)) from exc
+
+        text = _parse_response(response, self._model).text
+        return "" if text.strip().upper() == _NO_SPEECH else text
 
     def _get_client(self) -> Any:
         if self._client is None:

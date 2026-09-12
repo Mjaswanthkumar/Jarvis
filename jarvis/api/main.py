@@ -6,7 +6,16 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Request,
+    Response,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -21,10 +30,11 @@ from jarvis.api.schemas import (
     HealthResponse,
     PendingConfirmation,
     ToolInfo,
+    TranscriptionResponse,
     TranscriptResponse,
 )
 from jarvis.config import get_settings
-from jarvis.llm.base import Message, ToolCall
+from jarvis.llm.base import LLMError, Message, ToolCall
 from jarvis.llm.factory import get_provider
 from jarvis.security import summarize_call
 from jarvis.storage import Store
@@ -48,6 +58,7 @@ def health() -> HealthResponse:
         llm_configured=provider.is_configured(),
         tool_count=len(REGISTRY.available()),
         read_only_mode=get_settings().jarvis_read_only_mode,
+        transcription=provider.supports_transcription,
     )
 
 
@@ -166,6 +177,50 @@ def _persist_turn(
             for row in pending
         ],
     )
+
+
+#: Container formats MediaRecorder produces, across browsers.
+_AUDIO_TYPES = {
+    "audio/webm",
+    "audio/ogg",
+    "audio/mp4",
+    "audio/mpeg",
+    "audio/wav",
+    "audio/x-wav",
+}
+_MAX_AUDIO_BYTES = 8 * 1024 * 1024
+
+
+@api.post("/transcribe", response_model=TranscriptionResponse)
+async def transcribe(audio: UploadFile = File(...)) -> TranscriptionResponse:
+    """Transcribe recorded speech.
+
+    Fallback for browsers without a usable Web Speech API (Brave ships no
+    speech API key), so voice input does not depend on the browser.
+    """
+    provider = get_provider()
+    if not provider.supports_transcription:
+        raise HTTPException(
+            status_code=503, detail="transcription is not available"
+        )
+
+    mime_type = (audio.content_type or "").split(";")[0].strip().lower()
+    if mime_type not in _AUDIO_TYPES:
+        raise HTTPException(
+            status_code=415, detail=f"unsupported audio format: {mime_type or 'unknown'}"
+        )
+
+    payload = await audio.read(_MAX_AUDIO_BYTES + 1)
+    if len(payload) > _MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="recording is too long")
+    if not payload:
+        raise HTTPException(status_code=400, detail="empty recording")
+
+    try:
+        text = await provider.transcribe(payload, mime_type)
+    except LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return TranscriptionResponse(text=text.strip())
 
 
 @api.get("/conversations", response_model=list[ConversationInfo])
