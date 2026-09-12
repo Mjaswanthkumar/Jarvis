@@ -26,7 +26,7 @@ Open <http://127.0.0.1:8010> and paste your `JARVIS_AUTH_TOKEN` to connect.
 | Variable | Purpose |
 | --- | --- |
 | `GEMINI_API_KEY` | Gemini API key ([AI Studio](https://aistudio.google.com/apikey)) |
-| `GEMINI_MODEL` | Model id, default `gemini-2.0-flash` |
+| `GEMINI_MODEL` | Model id, default `gemini-3.8-flash` |
 | `JARVIS_AUTH_TOKEN` | Shared secret required by every API call — the server refuses to start without it |
 | `JARVIS_HOST` / `JARVIS_PORT` | Bind address, default `127.0.0.1:8010` |
 | `JARVIS_ALLOWED_ROOTS` | Comma-separated filesystem roots Jarvis may inspect (default: your home dir) |
@@ -46,10 +46,35 @@ Every tool declares a permission level:
 The API has no anonymous mode: a missing `JARVIS_AUTH_TOKEN` fails closed.
 Every tool call is written to a SQLite audit log.
 
-## Tools (phase 1)
+## Tools
 
-`system_health`, `cpu_info`, `memory_info`, `disk_usage`, `battery_status`,
-`network_info`, `list_processes` — all `READ_ONLY`.
+| Tool | Level | What it does |
+| --- | --- | --- |
+| `system_health` | READ_ONLY | CPU, RAM, disks, battery, uptime in one call |
+| `cpu_info` / `memory_info` / `disk_usage` / `battery_status` / `network_info` | READ_ONLY | Individual metrics |
+| `list_processes` | READ_ONLY | Top processes by CPU or memory |
+| `list_open_windows` | READ_ONLY | Apps with visible windows — "what do I have open?" |
+| `search_files` | READ_ONLY | Substring or glob search inside the sandbox |
+| `list_directory` | READ_ONLY | Folder contents with sizes |
+| `read_text_file` | READ_ONLY | Text/source files; refuses binaries and credential files |
+| `largest_files` | READ_ONLY | What is eating disk space |
+| `open_path` | LOW_RISK | Open a file or folder in Explorer |
+| `open_application` | LOW_RISK | Launch an app by name (alias table, App Paths registry, Start Menu) |
+| `close_application` | CONFIRM_REQUIRED | Terminate matching processes; critical Windows processes refused |
+
+### Filesystem sandbox
+
+Every path argument is resolved through `jarvis/tools/paths.py`. Anything outside
+`JARVIS_ALLOWED_ROOTS` (default: your home directory) is refused before the tool
+runs, `..` escapes included. Credential files (`.env`, `*.pem`, SSH keys) are
+never read back.
+
+### Application launching
+
+`open_application` takes a *name*, never a command line: it resolves through an
+alias table, `shutil.which`, the Windows `App Paths` registry and Start Menu
+shortcuts, then execs an argv list with no shell. Nothing machine-specific is
+hard-coded.
 
 ## API
 
@@ -74,7 +99,7 @@ Every tool call is written to a SQLite audit log.
 ## Roadmap
 
 1. ✅ Setup, Gemini, agent loop, system monitoring
-2. Application / file control
+2. ✅ Application / file control
 3. Git, Docker, Kubernetes tools
 4. Confirmation flow, richer policy, logging
 5. Remote access hardening for mobile

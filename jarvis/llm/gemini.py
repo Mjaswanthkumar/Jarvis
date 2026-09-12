@@ -105,10 +105,25 @@ class GeminiProvider(LLMProvider):
                 config=types.GenerateContentConfig(**config_kwargs),
             )
         except Exception as exc:
-            logger.exception("gemini request failed")
-            raise LLMError(f"Gemini request failed: {exc}") from exc
+            logger.warning("gemini request failed: %s", exc)
+            raise LLMError(_friendly_error(exc, self._model)) from exc
 
         return _parse_response(response, self._model)
+
+
+def _friendly_error(exc: Exception, model: str) -> str:
+    """Turn provider exceptions into something a user can act on."""
+    text = str(exc)
+    if "PERMISSION_DENIED" in text or "403" in text:
+        return (
+            f"Gemini denied access to '{model}'. The API key's Google Cloud project "
+            "is not allowed to generate content -- create a new key in AI Studio."
+        )
+    if "NOT_FOUND" in text or "404" in text:
+        return f"Gemini model '{model}' does not exist or was retired. Set GEMINI_MODEL to a current model."
+    if "RESOURCE_EXHAUSTED" in text or "429" in text:
+        return "Gemini rate limit or quota reached. Try again shortly."
+    return f"Gemini request failed: {text}"
 
 
 def _to_content(message: Message, types: Any) -> Any:

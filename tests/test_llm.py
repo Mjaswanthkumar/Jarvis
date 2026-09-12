@@ -74,7 +74,7 @@ def test_parse_response_extracts_text_and_calls() -> None:
             }
         ]
     )
-    parsed = _parse_response(response, "gemini-2.0-flash")
+    parsed = _parse_response(response, "gemini-3.8-flash")
     assert parsed.text == "here you go"
     assert parsed.tool_calls[0].name == "cpu_info"
     assert parsed.tool_calls[0].args == {"x": 1}

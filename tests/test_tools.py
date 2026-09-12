@@ -18,12 +18,30 @@ def test_core_system_tools_are_registered() -> None:
         "battery_status",
         "network_info",
         "list_processes",
+        "search_files",
+        "list_directory",
+        "read_text_file",
+        "largest_files",
+        "open_path",
+        "open_application",
+        "close_application",
+        "list_open_windows",
     } <= names
 
 
-def test_all_registered_tools_are_read_only_in_phase_one() -> None:
+def test_every_tool_declares_a_description_and_permission() -> None:
     for spec in REGISTRY.available():
-        assert spec.permission is PermissionLevel.READ_ONLY, spec.name
+        assert len(spec.description) > 20, spec.name
+        assert isinstance(spec.permission, PermissionLevel), spec.name
+
+
+def test_state_changing_tools_are_not_read_only() -> None:
+    """A tool that touches the machine must be gated above READ_ONLY."""
+    mutating = {"open_application", "close_application", "open_path"}
+    for name in mutating:
+        spec = REGISTRY.get(name)
+        assert spec is not None, name
+        assert spec.permission is not PermissionLevel.READ_ONLY, name
 
 
 def test_declarations_expose_parameters_schema() -> None:
