@@ -61,6 +61,10 @@ Every tool call is written to a SQLite audit log.
 | `open_path` | LOW_RISK | Open a file or folder in Explorer |
 | `open_application` | LOW_RISK | Launch an app by name (alias table, App Paths registry, Start Menu) |
 | `close_application` | CONFIRM_REQUIRED | Terminate matching processes; critical Windows processes refused |
+| `git_status` / `git_log` / `git_branches` / `git_diff_stat` | READ_ONLY | Branch, ahead/behind, dirty files, history, diff stats |
+| `docker_status` / `docker_containers` / `docker_logs` / `docker_images` | READ_ONLY | Daemon state, containers, logs, images |
+| `k8s_status` / `k8s_pods` / `k8s_logs` | READ_ONLY | Context, node readiness, pod health, pod logs |
+| `run_tests` | CONFIRM_REQUIRED | pytest or npm test, auto-detected; runs project code |
 
 ### Filesystem sandbox
 
@@ -68,6 +72,15 @@ Every path argument is resolved through `jarvis/tools/paths.py`. Anything outsid
 `JARVIS_ALLOWED_ROOTS` (default: your home directory) is refused before the tool
 runs, `..` escapes included. Credential files (`.env`, `*.pem`, SSH keys) are
 never read back.
+
+### External commands
+
+`jarvis/tools/shell.py` is the only place a process is spawned. It takes argv
+lists (never `shell=True`), refuses anything off a small executable allowlist
+(`git`, `docker`, `kubectl`, `python`, `npm`, `npx`), time-boxes every run and
+truncates output. Container, pod and namespace names are regex-validated so a
+model-supplied string cannot become an extra flag. Missing CLIs are reported as
+"not installed", not as a crash.
 
 ### Application launching
 
@@ -100,7 +113,7 @@ hard-coded.
 
 1. ✅ Setup, Gemini, agent loop, system monitoring
 2. ✅ Application / file control
-3. Git, Docker, Kubernetes tools
+3. ✅ Git, Docker, Kubernetes tools
 4. Confirmation flow, richer policy, logging
 5. Remote access hardening for mobile
 6. Voice and long-term memory
