@@ -16,7 +16,26 @@ from functools import lru_cache
 from pathlib import Path
 
 #: Executables Jarvis may spawn. Nothing else can be launched through here.
-ALLOWED_EXECUTABLES = frozenset({"git", "docker", "kubectl", "python", "npm", "npx"})
+ALLOWED_EXECUTABLES = frozenset(
+    {
+        # developer tooling
+        "git",
+        "docker",
+        "kubectl",
+        "python",
+        "npm",
+        "npx",
+        # read-only Windows diagnostics (see jarvis.tools.terminal)
+        "ipconfig",
+        "hostname",
+        "whoami",
+        "systeminfo",
+        "tasklist",
+        "netstat",
+        "nslookup",
+        "ping",
+    }
+)
 
 _MAX_OUTPUT_CHARS = 8000
 DEFAULT_TIMEOUT = 20.0

@@ -16,11 +16,25 @@ class ChatRequest(BaseModel):
     approved_tools: list[str] = Field(default_factory=list)
 
 
+class PendingConfirmation(BaseModel):
+    """An action Jarvis will only take once the user says yes."""
+
+    id: str
+    tool: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    summary: str
+
+
 class ChatResponse(BaseModel):
     reply: str
     conversation_id: str
     tool_events: list[ToolEvent] = Field(default_factory=list)
-    pending_confirmations: list[str] = Field(default_factory=list)
+    confirmations: list[PendingConfirmation] = Field(default_factory=list)
+
+
+class ConfirmRequest(BaseModel):
+    confirmation_id: str
+    approve: bool
 
 
 class HealthResponse(BaseModel):
@@ -29,6 +43,7 @@ class HealthResponse(BaseModel):
     llm_provider: str
     llm_configured: bool
     tool_count: int
+    read_only_mode: bool = False
 
 
 class ToolInfo(BaseModel):

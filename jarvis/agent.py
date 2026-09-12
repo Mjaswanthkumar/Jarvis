@@ -1,4 +1,4 @@
-"""The Jarvis agent loop: LLM picks tools, Jarvis runs them behind the gate."""
+"""The Jarvis agent loop: the LLM picks tools, Jarvis runs them behind the gate."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from typing import Any
 import anyio
 from pydantic import BaseModel, Field
 
-from jarvis.llm.base import LLMError, LLMProvider, Message, Role, ToolCall
+from jarvis.llm.base import LLMError, LLMProvider, Message, ToolCall
+from jarvis.security import Decision, PolicyEngine, summarize_call
 from jarvis.tools.permissions import PermissionLevel
 from jarvis.tools.registry import REGISTRY, ToolRegistry, ToolResult
 
@@ -21,10 +22,12 @@ their Windows PC.
 
 Rules:
 - Use the provided tools to answer anything about the machine's real state. Never \
-  guess CPU, memory, disk, battery, process or network values.
+  guess CPU, memory, disk, battery, process, file, git, Docker or Kubernetes values.
 - Call tools in parallel when the question needs several facts.
 - Answer in a few short sentences. Report concrete numbers with units; round \
   sensibly. Use a compact markdown list or table when several values are involved.
+- Some tools need the user's confirmation. If a tool reports that, tell the user \
+  exactly what you are about to do and stop -- do not retry it.
 - If a tool fails, say plainly what failed and suggest the next step.
 - If a request is outside your tools, say so instead of inventing a result.
 - Be direct and conversational. No preamble, no restating the question.
@@ -38,15 +41,20 @@ MAX_TOOL_RESULT_CHARS = 6000
 
 
 class ToolEvent(BaseModel):
-    """One executed (or refused) tool call, surfaced to the UI."""
+    """One executed (or refused) tool call, surfaced to the UI and audit log."""
 
     name: str
     args: dict[str, Any] = Field(default_factory=dict)
     ok: bool
     permission: PermissionLevel
+    decision: Decision = Decision.ALLOW
+    reason: str = ""
     duration_ms: int = 0
     error: str | None = None
-    needs_confirmation: bool = False
+
+    @property
+    def needs_confirmation(self) -> bool:
+        return self.decision is Decision.CONFIRM
 
 
 class AgentResult(BaseModel):
@@ -55,6 +63,7 @@ class AgentResult(BaseModel):
     reply: str
     tool_events: list[ToolEvent] = Field(default_factory=list)
     messages: list[Message] = Field(default_factory=list)
+    #: Calls the user must approve before Jarvis will run them.
     pending_confirmations: list[ToolCall] = Field(default_factory=list)
 
 
@@ -65,12 +74,14 @@ class JarvisAgent:
         self,
         provider: LLMProvider,
         registry: ToolRegistry | None = None,
+        policy: PolicyEngine | None = None,
         *,
         max_iterations: int = MAX_ITERATIONS,
         system_prompt: str = SYSTEM_PROMPT,
     ) -> None:
         self._provider = provider
         self._registry = registry or REGISTRY
+        self._policy = policy or PolicyEngine.from_settings()
         self._max_iterations = max_iterations
         self._system_prompt = system_prompt
 
@@ -81,14 +92,38 @@ class JarvisAgent:
         *,
         approved_tools: set[str] | None = None,
     ) -> AgentResult:
-        """Answer one user message, executing tools as the model requests them.
+        """Answer one user message, executing tools as the model requests them."""
+        turn = Message.user(user_message)
+        messages = [*(history or []), turn]
+        return await self._loop(messages, [turn], approved_tools or set())
 
-        ``approved_tools`` carries names the user has explicitly confirmed for
-        this turn; CONFIRM_REQUIRED tools outside that set are not executed.
+    async def resume_with_approval(
+        self, call: ToolCall, history: list[Message] | None = None
+    ) -> AgentResult:
+        """Run a call the user has just approved, then let the model report back.
+
+        The approved call is executed directly rather than handed back to the
+        model, so what runs is exactly what the user saw and approved.
         """
-        messages: list[Message] = list(history or [])
-        messages.append(Message.user(user_message))
-        new_messages: list[Message] = [messages[-1]]
+        result, event = await anyio.to_thread.run_sync(
+            self._execute_one, call, {call.name}
+        )
+        note = Message.user(
+            f"[jarvis] The user approved '{call.name}'. Jarvis executed it. "
+            f"Result: {_serialize(result)}. Report the outcome to the user.",
+            hidden=True,
+        )
+        messages = [*(history or []), note]
+        outcome = await self._loop(messages, [note], {call.name})
+        outcome.tool_events.insert(0, event)
+        return outcome
+
+    async def _loop(
+        self,
+        messages: list[Message],
+        new_messages: list[Message],
+        approved: set[str],
+    ) -> AgentResult:
         events: list[ToolEvent] = []
         pending: list[ToolCall] = []
 
@@ -119,9 +154,7 @@ class JarvisAgent:
                     pending_confirmations=pending,
                 )
 
-            results = await self._execute_calls(
-                response.tool_calls, approved_tools or set()
-            )
+            results = await self._execute_calls(response.tool_calls, approved)
             for call, (result, event) in zip(response.tool_calls, results):
                 events.append(event)
                 if event.needs_confirmation:
@@ -151,47 +184,65 @@ class JarvisAgent:
                 self._execute_one, call, approved
             )
 
-        async with anyio.create_task_group() as tg:
+        async with anyio.create_task_group() as task_group:
             for index, call in enumerate(calls):
-                tg.start_soon(run_one, index, call)
-        return [r for r in results if r is not None]
+                task_group.start_soon(run_one, index, call)
+        return [result for result in results if result is not None]
 
     def _execute_one(
         self, call: ToolCall, approved: set[str]
     ) -> tuple[ToolResult, ToolEvent]:
+        """Policy gate, then execution. Every path returns a result and an event."""
         spec = self._registry.get(call.name)
-        permission = spec.permission if spec else PermissionLevel.BLOCKED
+        verdict = self._policy.evaluate(
+            spec, tool_name=call.name, approved=call.name in approved
+        )
 
-        if spec is not None and permission.requires_confirmation():
-            if call.name not in approved:
-                result = ToolResult(
+        if verdict.decision is not Decision.ALLOW:
+            message = (
+                f"confirmation required: {summarize_call(call.name, call.args)}"
+                if verdict.decision is Decision.CONFIRM
+                else verdict.reason
+            )
+            logger.info(
+                "policy %s for %s: %s", verdict.decision.value, call.name, verdict.reason
+            )
+            return (
+                ToolResult(
                     ok=False,
                     tool=call.name,
-                    error="confirmation required: ask the user to approve this action",
-                    needs_confirmation=True,
-                )
-                return result, ToolEvent(
+                    error=message,
+                    needs_confirmation=verdict.decision is Decision.CONFIRM,
+                ),
+                ToolEvent(
                     name=call.name,
                     args=call.args,
                     ok=False,
-                    permission=permission,
-                    error=result.error,
-                    needs_confirmation=True,
-                )
+                    permission=verdict.permission,
+                    decision=verdict.decision,
+                    reason=verdict.reason,
+                    error=message,
+                ),
+            )
 
         result = self._registry.execute(call.name, call.args)
+        logger.info(
+            "tool %s ok=%s in %dms", call.name, result.ok, result.duration_ms
+        )
         return result, ToolEvent(
             name=call.name,
             args=call.args,
             ok=result.ok,
-            permission=permission,
+            permission=verdict.permission,
+            decision=Decision.ALLOW,
+            reason=verdict.reason,
             duration_ms=result.duration_ms,
             error=result.error,
         )
 
 
 def _serialize(result: ToolResult) -> str:
-    payload = {"ok": result.ok}
+    payload: dict[str, Any] = {"ok": result.ok}
     if result.ok:
         payload["data"] = result.data
     else:

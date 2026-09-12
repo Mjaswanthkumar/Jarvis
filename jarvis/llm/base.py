@@ -38,10 +38,12 @@ class Message(BaseModel):
     tool_calls: list[ToolCall] = Field(default_factory=list)
     #: Set on Role.TOOL messages -- the name of the tool that produced content.
     tool_name: str | None = None
+    #: Internal bookkeeping the model sees but the chat transcript hides.
+    hidden: bool = False
 
     @classmethod
-    def user(cls, content: str) -> "Message":
-        return cls(role=Role.USER, content=content)
+    def user(cls, content: str, *, hidden: bool = False) -> "Message":
+        return cls(role=Role.USER, content=content, hidden=hidden)
 
     @classmethod
     def assistant(

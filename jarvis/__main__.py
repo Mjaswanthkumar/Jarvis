@@ -7,13 +7,13 @@ import logging
 import uvicorn
 
 from jarvis.config import get_settings
+from jarvis.logging_setup import configure_logging
 
 
 def main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
     settings = get_settings()
+    log_path = configure_logging(settings.jarvis_data_dir)
+    logging.getLogger(__name__).info("logging to %s", log_path)
     if not settings.jarvis_auth_token:
         raise SystemExit(
             "JARVIS_AUTH_TOKEN is not set. Copy .env.example to .env and set a "

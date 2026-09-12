@@ -11,17 +11,22 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from jarvis import __version__
-from jarvis.agent import JarvisAgent
+from jarvis.agent import AgentResult, JarvisAgent
 from jarvis.api.deps import get_agent, get_store, require_auth
 from jarvis.api.schemas import (
     ChatRequest,
     ChatResponse,
+    ConfirmRequest,
     ConversationInfo,
     HealthResponse,
+    PendingConfirmation,
     ToolInfo,
     TranscriptResponse,
 )
+from jarvis.config import get_settings
+from jarvis.llm.base import Message, ToolCall
 from jarvis.llm.factory import get_provider
+from jarvis.security import summarize_call
 from jarvis.storage import Store
 from jarvis.tools import REGISTRY
 from jarvis.tools.system import system_health
@@ -42,6 +47,7 @@ def health() -> HealthResponse:
         llm_provider=provider.name,
         llm_configured=provider.is_configured(),
         tool_count=len(REGISTRY.available()),
+        read_only_mode=get_settings().jarvis_read_only_mode,
     )
 
 
@@ -78,9 +84,58 @@ async def chat(
         history,
         approved_tools=set(request.approved_tools),
     )
-
-    store.add_messages(conversation_id, result.messages)
     store.set_title_if_empty(conversation_id, request.message)
+    return _persist_turn(store, conversation_id, result)
+
+
+@api.post("/confirm", response_model=ChatResponse)
+async def confirm(
+    request: ConfirmRequest,
+    agent: JarvisAgent = Depends(get_agent),
+    store: Store = Depends(get_store),
+) -> ChatResponse:
+    """Approve or deny a pending action, then let Jarvis finish the turn."""
+    pending = store.get_confirmation(request.confirmation_id)
+    if pending is None:
+        raise HTTPException(status_code=404, detail="confirmation not found")
+    if pending["status"] != "pending":
+        raise HTTPException(
+            status_code=409, detail=f"already {pending['status']}"
+        )
+
+    conversation_id = pending["conversation_id"]
+    if not store.resolve_confirmation(
+        request.confirmation_id, "approved" if request.approve else "denied"
+    ):
+        raise HTTPException(status_code=409, detail="confirmation already resolved")
+
+    if not request.approve:
+        reply = f"Cancelled. I did not run {pending['tool']}."
+        store.add_messages(conversation_id, [Message.assistant(reply)])
+        return ChatResponse(reply=reply, conversation_id=conversation_id)
+
+    history = store.get_messages(conversation_id)
+    result = await agent.resume_with_approval(
+        ToolCall(name=pending["tool"], args=pending["args"]), history
+    )
+    return _persist_turn(store, conversation_id, result)
+
+
+@api.get("/confirmations", response_model=list[PendingConfirmation])
+def confirmations(
+    conversation_id: str | None = None, store: Store = Depends(get_store)
+) -> list[PendingConfirmation]:
+    return [
+        PendingConfirmation(**{k: row[k] for k in ("id", "tool", "args", "summary")})
+        for row in store.pending_confirmations(conversation_id)
+    ]
+
+
+def _persist_turn(
+    store: Store, conversation_id: str, result: AgentResult
+) -> ChatResponse:
+    """Write messages + audit rows, and register anything awaiting approval."""
+    store.add_messages(conversation_id, result.messages)
     for event in result.tool_events:
         store.log_tool_call(
             conversation_id,
@@ -90,15 +145,26 @@ async def chat(
             event.ok,
             event.error,
             event.duration_ms,
+            event.decision.value,
         )
 
+    pending = [
+        store.create_confirmation(
+            conversation_id,
+            call.name,
+            call.args,
+            summarize_call(call.name, call.args),
+        )
+        for call in result.pending_confirmations
+    ]
     return ChatResponse(
         reply=result.reply,
         conversation_id=conversation_id,
         tool_events=result.tool_events,
-        pending_confirmations=sorted(
-            {call.name for call in result.pending_confirmations}
-        ),
+        confirmations=[
+            PendingConfirmation(**{k: row[k] for k in ("id", "tool", "args", "summary")})
+            for row in pending
+        ],
     )
 
 

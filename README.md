@@ -44,7 +44,29 @@ Every tool declares a permission level:
 | `BLOCKED` | Never advertised to the model, never executed |
 
 The API has no anonymous mode: a missing `JARVIS_AUTH_TOKEN` fails closed.
-Every tool call is written to a SQLite audit log.
+
+**Policy layer.** `jarvis/security.py` decides whether a selected tool may run
+*now*. Configuration can only tighten the defaults, with one deliberate
+exception (`JARVIS_AUTO_APPROVE_TOOLS`, for unattended setups):
+
+* `JARVIS_BLOCKED_TOOLS` — disable named tools outright
+* `JARVIS_AUTO_APPROVE_TOOLS` — pre-approve named CONFIRM_REQUIRED tools
+* `JARVIS_READ_ONLY_MODE=true` — refuse everything that is not READ_ONLY
+
+**Confirmation flow.** When the model selects a CONFIRM_REQUIRED tool, Jarvis
+does *not* run it. It stores the exact call, returns a single-use confirmation
+id, and the UI shows an Approve/Cancel card. `POST /api/confirm` then executes
+**that stored call** — not a fresh one from the model — so what runs is exactly
+what the user saw. Ids are single-use: a replay returns 409.
+
+**Audit.** Every tool call is written to SQLite with its permission level, policy
+decision, arguments, duration and error, and to a rotating log file in
+`JARVIS_DATA_DIR`.
+
+**Terminal.** `run_safe_command` is an allowlist of read-only programs with a
+per-program argument pattern, not a shell. `shutdown`, `del`, `taskkill`,
+`powershell`, `git push`, `docker rm`, `kubectl delete`, command chaining,
+redirection and substitution are all rejected.
 
 ## Tools
 
@@ -65,6 +87,7 @@ Every tool call is written to a SQLite audit log.
 | `docker_status` / `docker_containers` / `docker_logs` / `docker_images` | READ_ONLY | Daemon state, containers, logs, images |
 | `k8s_status` / `k8s_pods` / `k8s_logs` | READ_ONLY | Context, node readiness, pod health, pod logs |
 | `run_tests` | CONFIRM_REQUIRED | pytest or npm test, auto-detected; runs project code |
+| `run_safe_command` | LOW_RISK | One read-only diagnostic command from a fixed allowlist |
 
 ### Filesystem sandbox
 
@@ -101,6 +124,8 @@ hard-coded.
 | `GET /api/conversations` | Recent conversations |
 | `GET /api/conversations/{id}` | Transcript |
 | `DELETE /api/conversations/{id}` | Delete a conversation |
+| `POST /api/confirm` | `{confirmation_id, approve}` — run or cancel a pending action |
+| `GET /api/confirmations` | Actions awaiting approval |
 | `GET /api/activity` | Recent tool-call audit entries |
 
 ## Tests

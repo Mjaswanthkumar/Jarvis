@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS messages (
     content         TEXT NOT NULL DEFAULT '',
     tool_name       TEXT,
     tool_calls      TEXT NOT NULL DEFAULT '[]',
+    hidden          INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conversation
@@ -38,9 +39,22 @@ CREATE TABLE IF NOT EXISTS tool_audit (
     permission      TEXT NOT NULL,
     ok              INTEGER NOT NULL,
     error           TEXT,
+    decision        TEXT NOT NULL DEFAULT 'allow',
     duration_ms     INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS confirmations (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    tool            TEXT NOT NULL,
+    args            TEXT NOT NULL DEFAULT '{}',
+    summary         TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'pending',
+    created_at      TEXT NOT NULL,
+    resolved_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_confirmations_conversation
+    ON confirmations(conversation_id, status);
 """
 
 
@@ -128,6 +142,7 @@ class Store:
                 message.content,
                 message.tool_name,
                 json.dumps([call.model_dump() for call in message.tool_calls]),
+                int(message.hidden),
                 stamp,
             )
             for message in messages
@@ -135,7 +150,7 @@ class Store:
         with self._lock:
             self._conn.executemany(
                 "INSERT INTO messages (conversation_id, role, content, tool_name,"
-                " tool_calls, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                " tool_calls, hidden, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 rows,
             )
             self._conn.execute(
@@ -148,7 +163,7 @@ class Store:
         """Return the last ``limit`` messages in chronological order."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT role, content, tool_name, tool_calls FROM messages"
+                "SELECT role, content, tool_name, tool_calls, hidden FROM messages"
                 " WHERE conversation_id = ? ORDER BY id DESC LIMIT ?",
                 (conversation_id, limit),
             ).fetchall()
@@ -158,6 +173,7 @@ class Store:
                 content=row["content"],
                 tool_name=row["tool_name"],
                 tool_calls=[ToolCall(**c) for c in json.loads(row["tool_calls"])],
+                hidden=bool(row["hidden"]),
             )
             for row in reversed(rows)
         ]
@@ -169,10 +185,81 @@ class Store:
             rows = self._conn.execute(
                 "SELECT role, content, created_at FROM messages"
                 " WHERE conversation_id = ? AND role IN ('user', 'assistant')"
-                " AND content != '' ORDER BY id DESC LIMIT ?",
+                " AND content != '' AND hidden = 0 ORDER BY id DESC LIMIT ?",
                 (conversation_id, limit),
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
+
+    # -- confirmations ----------------------------------------------------
+    def create_confirmation(
+        self,
+        conversation_id: str,
+        tool: str,
+        args: dict[str, Any],
+        summary: str,
+    ) -> dict[str, Any]:
+        """Record an action awaiting the user's approval."""
+        confirmation_id = uuid.uuid4().hex[:16]
+        row = {
+            "id": confirmation_id,
+            "conversation_id": conversation_id,
+            "tool": tool,
+            "args": args,
+            "summary": summary,
+            "status": "pending",
+            "created_at": _now(),
+        }
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO confirmations (id, conversation_id, tool, args, summary,"
+                " status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+                (
+                    confirmation_id,
+                    conversation_id,
+                    tool,
+                    json.dumps(args, default=str),
+                    summary,
+                    row["created_at"],
+                ),
+            )
+            self._conn.commit()
+        return row
+
+    def get_confirmation(self, confirmation_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM confirmations WHERE id = ?", (confirmation_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return {**dict(row), "args": json.loads(row["args"])}
+
+    def resolve_confirmation(self, confirmation_id: str, status: str) -> bool:
+        """Mark a confirmation approved/denied. False if it was already resolved."""
+        if status not in ("approved", "denied"):
+            raise ValueError("status must be 'approved' or 'denied'")
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE confirmations SET status = ?, resolved_at = ?"
+                " WHERE id = ? AND status = 'pending'",
+                (status, _now(), confirmation_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
+
+    def pending_confirmations(
+        self, conversation_id: str | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM confirmations WHERE status = 'pending'"
+        params: list[Any] = []
+        if conversation_id:
+            query += " AND conversation_id = ?"
+            params.append(conversation_id)
+        query += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(query, params).fetchall()
+        return [{**dict(row), "args": json.loads(row["args"])} for row in rows]
 
     # -- audit ------------------------------------------------------------
     def log_tool_call(
@@ -184,11 +271,13 @@ class Store:
         ok: bool,
         error: str | None,
         duration_ms: int,
+        decision: str = "allow",
     ) -> None:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO tool_audit (conversation_id, tool, args, permission, ok,"
-                " error, duration_ms, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " error, decision, duration_ms, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     conversation_id,
                     tool,
@@ -196,6 +285,7 @@ class Store:
                     permission,
                     int(ok),
                     error,
+                    decision,
                     duration_ms,
                     _now(),
                 ),
@@ -205,8 +295,8 @@ class Store:
     def recent_tool_calls(self, limit: int = 20) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT tool, args, permission, ok, error, duration_ms, created_at"
-                " FROM tool_audit ORDER BY id DESC LIMIT ?",
+                "SELECT tool, args, permission, ok, error, decision, duration_ms,"
+                " created_at FROM tool_audit ORDER BY id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [

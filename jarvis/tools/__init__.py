@@ -10,6 +10,7 @@ from jarvis.tools import (  # noqa: F401,E402
     files,
     git_tools,
     system,
+    terminal,
 )
 
 __all__ = ["REGISTRY", "ToolSpec", "tool", "PermissionLevel"]

@@ -26,6 +26,17 @@ class Settings(BaseSettings):
     #: Comma-separated filesystem roots Jarvis may inspect. Empty -> home only.
     jarvis_allowed_roots: str = Field(default="", alias="JARVIS_ALLOWED_ROOTS")
 
+    #: Tools to disable entirely, by name (comma-separated).
+    jarvis_blocked_tools: str = Field(default="", alias="JARVIS_BLOCKED_TOOLS")
+
+    #: CONFIRM_REQUIRED tools pre-approved by configuration (comma-separated).
+    jarvis_auto_approve_tools: str = Field(
+        default="", alias="JARVIS_AUTO_APPROVE_TOOLS"
+    )
+
+    #: When true, only READ_ONLY tools may run -- nothing can change the machine.
+    jarvis_read_only_mode: bool = Field(default=False, alias="JARVIS_READ_ONLY_MODE")
+
     #: Where the SQLite conversation/audit database lives.
     jarvis_data_dir: Path = Field(
         default_factory=lambda: Path.home() / ".jarvis", alias="JARVIS_DATA_DIR"

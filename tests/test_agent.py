@@ -174,3 +174,62 @@ async def test_history_is_passed_to_the_provider(registry: ToolRegistry) -> None
     history = [Message.user("earlier"), Message.assistant("noted")]
     await JarvisAgent(provider, registry).run("now", history)
     assert [m.content for m in provider.seen[0]] == ["earlier", "noted", "now"]
+
+
+@pytest.mark.asyncio
+async def test_resume_with_approval_executes_the_exact_call(
+    registry: ToolRegistry,
+) -> None:
+    """The approved call runs as-is; the model only narrates the outcome."""
+    provider = ScriptedProvider([LLMResponse(text="Done, it is closed.")])
+    agent = JarvisAgent(provider, registry)
+
+    result = await agent.resume_with_approval(ToolCall(name="risky"))
+
+    assert result.reply == "Done, it is closed."
+    assert result.tool_events[0].name == "risky"
+    assert result.tool_events[0].ok is True
+
+    note = provider.seen[0][-1]
+    assert note.hidden is True
+    assert "approved" in note.content and "executed" in note.content
+
+
+@pytest.mark.asyncio
+async def test_policy_blocklist_stops_a_tool_the_model_asks_for(
+    registry: ToolRegistry,
+) -> None:
+    from jarvis.security import Decision, PolicyEngine
+
+    provider = ScriptedProvider(
+        [
+            LLMResponse(tool_calls=[ToolCall(name="echo", args={"value": 1})]),
+            LLMResponse(text="I cannot use that tool."),
+        ]
+    )
+    agent = JarvisAgent(provider, registry, PolicyEngine(blocked_tools={"echo"}))
+    result = await agent.run("echo")
+
+    event = result.tool_events[0]
+    assert event.decision is Decision.DENY
+    assert not event.ok
+    assert result.pending_confirmations == []
+
+
+@pytest.mark.asyncio
+async def test_read_only_mode_refuses_state_changing_tools(
+    registry: ToolRegistry,
+) -> None:
+    from jarvis.security import Decision, PolicyEngine
+
+    provider = ScriptedProvider(
+        [
+            LLMResponse(tool_calls=[ToolCall(name="risky")]),
+            LLMResponse(text="Read-only mode is on."),
+        ]
+    )
+    agent = JarvisAgent(provider, registry, PolicyEngine(read_only_mode=True))
+    result = await agent.run("close it", approved_tools={"risky"})
+
+    assert result.tool_events[0].decision is Decision.DENY
+    assert "read-only mode" in (result.tool_events[0].reason or "")

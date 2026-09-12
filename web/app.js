@@ -188,6 +188,59 @@
     return wrapper;
   }
 
+  function addConfirmation(confirmation) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "msg assistant";
+    const card = document.createElement("div");
+    card.className = "bubble confirm-card";
+    card.innerHTML = `<div class="confirm-head">⚠ Confirmation required</div>
+      <div class="confirm-summary">${escapeHtml(confirmation.summary)}</div>`;
+
+    const actions = document.createElement("div");
+    actions.className = "confirm-actions";
+    const approve = document.createElement("button");
+    approve.textContent = "Approve";
+    approve.className = "approve";
+    const deny = document.createElement("button");
+    deny.textContent = "Cancel";
+    deny.className = "deny";
+    actions.append(approve, deny);
+    card.appendChild(actions);
+    wrapper.appendChild(card);
+    els.messages.appendChild(wrapper);
+    els.messages.scrollTop = els.messages.scrollHeight;
+
+    const resolve = async (approved) => {
+      approve.disabled = deny.disabled = true;
+      actions.remove();
+      card.insertAdjacentHTML(
+        "beforeend",
+        `<div class="confirm-state">${approved ? "Approved" : "Cancelled"}</div>`
+      );
+      const typing = approved ? addTyping() : null;
+      try {
+        const data = await api("/confirm", {
+          method: "POST",
+          body: JSON.stringify({
+            confirmation_id: confirmation.id,
+            approve: approved,
+          }),
+        });
+        typing?.remove();
+        addMessage("assistant", renderMarkdown(data.reply), data.tool_events);
+        (data.confirmations || []).forEach(addConfirmation);
+        poll();
+      } catch (error) {
+        typing?.remove();
+        if (error.unauthorized) return logout("Session expired.");
+        addMessage("assistant", `<span class="error">${escapeHtml(error.message)}</span>`);
+      }
+    };
+
+    approve.addEventListener("click", () => resolve(true));
+    deny.addEventListener("click", () => resolve(false));
+  }
+
   function addTyping() {
     return addMessage(
       "assistant",
@@ -208,11 +261,12 @@
       storageSet(CONV_KEY, conversationId);
       typing.remove();
       addMessage("assistant", renderMarkdown(data.reply), data.tool_events);
+      (data.confirmations || []).forEach(addConfirmation);
       poll();
     } catch (error) {
       typing.remove();
       if (error.unauthorized) return logout("Session expired.");
-      addMessage("assistant", `<span style="color:#ff6b6b">${escapeHtml(error.message)}</span>`);
+      addMessage("assistant", `<span class="error">${escapeHtml(error.message)}</span>`);
     } finally {
       els.send.disabled = false;
       els.input.focus();
@@ -244,7 +298,10 @@
     storageSet(TOKEN_KEY, token);
     els.gate.hidden = true;
     els.app.hidden = false;
-    setStatus(true, health.llm_configured ? "online" : "online · no API key");
+    const flags = [];
+    if (!health.llm_configured) flags.push("no API key");
+    if (health.read_only_mode) flags.push("read-only");
+    setStatus(true, flags.length ? `online · ${flags.join(" · ")}` : "online");
     await loadHistory();
     await poll();
     clearInterval(pollTimer);
