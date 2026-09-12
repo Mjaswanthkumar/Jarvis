@@ -158,3 +158,36 @@ def test_sandbox_registry_still_validates_arguments() -> None:
     result = sandbox_registry().execute("open_application", {"wrong": 1})
     assert not result.ok
     assert "invalid arguments" in (result.error or "")
+
+
+# ------------------------------------------------------ cassette portability ----
+def test_cassette_keys_ignore_the_machine_specific_sandbox_path() -> None:
+    """A cassette recorded on a laptop has to replay on a CI runner.
+
+    Sandbox paths live under the machine's temp directory, so a key that embeds
+    them misses on every other machine -- which is exactly how CI failed first.
+    """
+    from evals.recorder import _key
+    from jarvis.llm.base import Message
+
+    laptop = [Message.user(r"read C:\Users\jashu\AppData\Local\Temp\jarvis-evals\c\a.txt")]
+    runner = [Message.user(r"read C:\Users\runneradmin\AppData\Local\Temp\jarvis-evals\c\a.txt")]
+    assert _key(laptop, "sys") == _key(runner, "sys")
+
+
+def test_cassette_keys_still_distinguish_different_conversations() -> None:
+    from evals.recorder import _key
+    from jarvis.llm.base import Message
+
+    assert _key([Message.user("a")], "sys") != _key([Message.user("b")], "sys")
+    assert _key([Message.user("a")], "sys") != _key([Message.user("a")], "other")
+
+
+def test_shipped_cassette_covers_every_case() -> None:
+    """A missing entry would fail CI, so catch it here instead."""
+    import json
+
+    from evals.recorder import CASSETTE_PATH
+
+    entries = json.loads(CASSETTE_PATH.read_text(encoding="utf-8"))
+    assert len(entries) >= len(load_cases())

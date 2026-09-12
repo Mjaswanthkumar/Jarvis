@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,11 @@ from jarvis.llm.base import (
 )
 
 CASSETTE_PATH = Path(__file__).parent / "cassette.json"
+
+#: Eval sandboxes live under the machine's temp directory, so their absolute
+#: path differs between a laptop and a CI runner. Keys must not depend on it or
+#: every sandbox case misses on replay elsewhere.
+_SANDBOX_PATH = re.compile(r"[A-Za-z]:[^\"]*?jarvis-evals")
 
 
 def _key(messages: list[Message], system_prompt: str) -> str:
@@ -43,7 +49,9 @@ def _key(messages: list[Message], system_prompt: str) -> str:
         },
         sort_keys=True,
     )
-    return hashlib.sha256(payload.encode()).hexdigest()[:20]
+    return hashlib.sha256(
+        _SANDBOX_PATH.sub("{SANDBOX}", payload).encode()
+    ).hexdigest()[:20]
 
 
 class RecordingProvider(LLMProvider):
