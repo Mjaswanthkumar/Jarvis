@@ -42,6 +42,12 @@
   expect_tools: [network_info]
   max_tools: 3
 
+- id: cpu_trend_uses_history
+  category: system
+  prompt: Has my CPU been busy over the last hour, and is it trending up or down?
+  expect_tools: [metric_history]
+  max_tools: 2
+
 - id: open_windows_not_processes
   category: system
   prompt: What apps do I have open right now?

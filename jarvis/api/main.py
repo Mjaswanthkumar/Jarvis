@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +38,7 @@ from jarvis.api.schemas import (
 from jarvis.config import get_settings
 from jarvis.llm.base import LLMError, Message, ToolCall
 from jarvis.llm.factory import get_provider
+from jarvis.metrics import SAMPLE_INTERVAL_SECONDS, MetricSampler
 from jarvis.security import summarize_call
 from jarvis.storage import Store
 from jarvis.tools import REGISTRY
@@ -66,6 +69,20 @@ def health() -> HealthResponse:
 def system() -> dict[str, Any]:
     """Live snapshot for the dashboard indicators."""
     return system_health()
+
+
+@api.get("/metrics/history")
+def metrics_history(
+    minutes: int = 60, store: Store = Depends(get_store)
+) -> dict[str, Any]:
+    """Recorded vitals, for the dashboard sparklines."""
+    minutes = max(1, min(minutes, 2880))
+    samples = store.metric_history(minutes=minutes)
+    return {
+        "minutes": minutes,
+        "interval_seconds": SAMPLE_INTERVAL_SECONDS,
+        "samples": samples,
+    }
 
 
 @api.get("/tools", response_model=list[ToolInfo])
@@ -287,11 +304,23 @@ _CONTENT_SECURITY_POLICY = (
 )
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Sample machine vitals for as long as the server runs."""
+    sampler = MetricSampler(get_store())
+    sampler.start()
+    try:
+        yield
+    finally:
+        await sampler.stop()
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Jarvis",
         version=__version__,
         description="AI-powered personal PC agent",
+        lifespan=lifespan,
     )
     app.include_router(api)
 

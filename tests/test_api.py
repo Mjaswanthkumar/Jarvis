@@ -706,3 +706,57 @@ def test_resolved_confirmations_are_not_restored(client: TestClient) -> None:
         f"/api/confirmations?conversation_id={conversation}", headers=HEADERS
     ).json()
     assert pending == []
+
+
+def test_metrics_history_endpoint(client: TestClient) -> None:
+    from jarvis.api import deps
+
+    store = deps.get_store()
+    store.record_metrics({"cpu_percent": 33.0, "memory_percent": 66.0})
+
+    body = client.get("/api/metrics/history?minutes=60", headers=HEADERS).json()
+    assert body["minutes"] == 60
+    assert body["interval_seconds"] > 0
+    assert body["samples"][-1]["cpu_percent"] == 33.0
+
+
+def test_metrics_history_requires_auth(client: TestClient) -> None:
+    assert client.get("/api/metrics/history").status_code == 401
+
+
+def test_metrics_history_window_is_clamped(client: TestClient) -> None:
+    body = client.get("/api/metrics/history?minutes=999999", headers=HEADERS).json()
+    assert body["minutes"] <= 2880
+
+
+def test_the_sampler_runs_while_the_app_is_up(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sampling is what makes the history useful, so the lifespan wiring matters."""
+    from jarvis.api import deps
+    from jarvis.api.main import create_app
+    from jarvis.config import get_settings
+
+    monkeypatch.setenv("JARVIS_AUTH_TOKEN", TOKEN)
+    monkeypatch.setenv("JARVIS_DATA_DIR", str(tmp_path))
+    get_settings.cache_clear()
+    deps.get_store.cache_clear()
+
+    import jarvis.api.main as main_module
+
+    started = {"value": False}
+    real_start = main_module.MetricSampler.start
+
+    def spy(self):
+        started["value"] = True
+        real_start(self)
+
+    monkeypatch.setattr(main_module.MetricSampler, "start", spy)
+
+    with TestClient(create_app()):
+        pass
+
+    assert started["value"], "the metric sampler never started"
+    deps.get_store().close()
+    deps.get_store.cache_clear()
+    get_settings.cache_clear()

@@ -118,6 +118,7 @@ redirection and substitution are all rejected.
 | `cpu_info` / `memory_info` / `disk_usage` / `battery_status` / `network_info` | READ_ONLY | Individual metrics |
 | `list_processes` | READ_ONLY | Top processes by CPU or memory |
 | `list_open_windows` | READ_ONLY | Apps with visible windows — "what do I have open?" |
+| `metric_history` | READ_ONLY | How CPU/memory/disk/battery have behaved over time, with average, peak and trend |
 | `search_files` | READ_ONLY | Substring or glob search inside the sandbox |
 | `list_directory` | READ_ONLY | Folder contents with sizes |
 | `read_text_file` | READ_ONLY | Text/source files; refuses binaries and credential files |
@@ -162,6 +163,7 @@ hard-coded.
 | `GET /manifest.webmanifest` | PWA manifest for home-screen install |
 | `GET /api/health` | Version, provider, tool count |
 | `GET /api/system` | Live CPU/RAM/disk/battery snapshot |
+| `GET /api/metrics/history` | Recorded vitals for the dashboard sparklines |
 | `GET /api/tools` | Tool catalogue with permission levels |
 | `POST /api/chat` | `{message, conversation_id?, approved_tools?}` |
 | `POST /api/conversations` | Start a new conversation |

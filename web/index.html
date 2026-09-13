@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Jarvis" />
-    <link rel="stylesheet" href="/static/style.css?v=9" />
+    <link rel="stylesheet" href="/static/style.css?v=10" />
   </head>
   <body>
     <div id="gate" class="gate">
@@ -65,18 +65,22 @@
         <div class="metric" data-key="cpu">
           <div class="metric-head"><span>CPU</span><b id="cpu-val">—</b></div>
           <div class="bar"><i id="cpu-bar"></i></div>
+          <svg class="spark" id="cpu-spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"></svg>
         </div>
         <div class="metric" data-key="ram">
           <div class="metric-head"><span>RAM</span><b id="ram-val">—</b></div>
           <div class="bar"><i id="ram-bar"></i></div>
+          <svg class="spark" id="ram-spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"></svg>
         </div>
         <div class="metric" data-key="disk">
           <div class="metric-head"><span>DISK</span><b id="disk-val">—</b></div>
           <div class="bar"><i id="disk-bar"></i></div>
+          <svg class="spark" id="disk-spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"></svg>
         </div>
         <div class="metric" data-key="battery">
           <div class="metric-head"><span>BATTERY</span><b id="bat-val">—</b></div>
           <div class="bar"><i id="bat-bar"></i></div>
+          <svg class="spark" id="bat-spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"></svg>
         </div>
       </section>
 
@@ -136,8 +140,8 @@
       </section>
     </div>
 
-    <script src="/static/markdown.js?v=9"></script>
-    <script src="/static/voice.js?v=9"></script>
-    <script src="/static/app.js?v=9"></script>
+    <script src="/static/markdown.js?v=10"></script>
+    <script src="/static/voice.js?v=10"></script>
+    <script src="/static/app.js?v=10"></script>
   </body>
 </html>

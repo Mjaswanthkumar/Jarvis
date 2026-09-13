@@ -55,6 +55,8 @@
   const SPEAK_KEY = "jarvis.speak";
 
   const REQUEST_TIMEOUT_MS = 45000;
+  //: Sparklines change slowly; refreshing them every poll would be wasted work.
+  const HISTORY_REFRESH_MS = 60000;
 
   /** Read a token handed over by the pairing QR code, then scrub the URL. */
   function tokenFromFragment() {
@@ -68,6 +70,7 @@
   let token = pairedToken || storageGet(TOKEN_KEY) || "";
   let conversationId = storageGet(CONV_KEY) || null;
   let pollTimer = null;
+  let historyFetchedAt = 0;
   const voice = window.JarvisVoice;
   let speakReplies = storageGet(SPEAK_KEY) === "1";
   //: True while a voice turn is in flight, so we know to re-open the mic.
@@ -169,6 +172,53 @@
     }
   }
 
+  /** Draw one metric's recent history as a sparkline. */
+  function drawSpark(id, values) {
+    const svg = $(id);
+    if (!svg) return;
+    const points = values.filter((value) => typeof value === "number");
+    if (points.length < 2) {
+      svg.innerHTML = "";
+      return;
+    }
+
+    // Scale to the observed range with a little headroom, so a flat-but-busy
+    // line is still readable rather than pinned to the floor.
+    const high = Math.max(...points, 1);
+    const low = Math.min(...points);
+    const span = Math.max(high - low, 5);
+    const step = 100 / (points.length - 1);
+    const path = points
+      .map((value, index) => {
+        const x = (index * step).toFixed(2);
+        const y = (22 - ((value - low) / span) * 20).toFixed(2);
+        return `${index ? "L" : "M"}${x},${y}`;
+      })
+      .join(" ");
+
+    const area = `${path} L100,24 L0,24 Z`;
+    svg.innerHTML =
+      `<path class="spark-area" d="${area}"></path>` +
+      `<path class="spark-line" d="${path}"></path>`;
+    svg.setAttribute("title", `${Math.round(low)}%–${Math.round(high)}% recently`);
+  }
+
+  async function refreshHistory(force) {
+    const now = Date.now();
+    if (!force && now - historyFetchedAt < HISTORY_REFRESH_MS) return;
+    historyFetchedAt = now;
+    try {
+      const data = await api("/metrics/history?minutes=60");
+      const rows = data.samples || [];
+      drawSpark("cpu-spark", rows.map((r) => r.cpu_percent));
+      drawSpark("ram-spark", rows.map((r) => r.memory_percent));
+      drawSpark("disk-spark", rows.map((r) => r.disk_percent));
+      drawSpark("bat-spark", rows.map((r) => r.battery_percent));
+    } catch (error) {
+      if (error.unauthorized) logout("Session expired.");
+    }
+  }
+
   function setStatus(online, text) {
     els.statusDot.className = `dot ${online ? "online" : "offline"}`;
     els.statusText.textContent = text;
@@ -183,6 +233,7 @@
       renderSystem(system);
       renderActivity(activity);
       setStatus(true, "online");
+      refreshHistory(false);
     } catch (error) {
       if (error.unauthorized) return logout("Session expired.");
       setStatus(false, "offline");
@@ -778,6 +829,7 @@
     await loadHistory();
     await restorePendingConfirmations();
     await poll();
+    await refreshHistory(true);
     startPolling();
     if (!isTouchDevice()) els.input.focus();
   }

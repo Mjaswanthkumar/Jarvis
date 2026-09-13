@@ -15,6 +15,14 @@ from jarvis.tools.registry import tool
 
 _BYTES_PER_GB = 1024**3
 
+#: Metric name the model uses -> column recorded by the sampler.
+_METRIC_COLUMNS = {
+    "cpu": "cpu_percent",
+    "memory": "memory_percent",
+    "disk": "disk_percent",
+    "battery": "battery_percent",
+}
+
 
 def _gb(value: float) -> float:
     return round(value / _BYTES_PER_GB, 2)
@@ -168,6 +176,59 @@ def _primary_ip() -> str | None:
         return None
     finally:
         sock.close()
+
+
+@tool(
+    description=(
+        "Machine vitals over time: how CPU, memory, disk or battery have "
+        "behaved over the last N minutes, with the average, peak and trend. "
+        "Use this for questions about the past -- 'was my CPU busy an hour "
+        "ago?', 'is memory climbing?' -- which the instantaneous tools cannot "
+        "answer."
+    ),
+    permission=PermissionLevel.READ_ONLY,
+    tags=("system",),
+)
+def metric_history(metric: str = "cpu", minutes: int = 60) -> dict[str, Any]:
+    if metric not in _METRIC_COLUMNS:
+        raise ValueError(f"metric must be one of {', '.join(_METRIC_COLUMNS)}")
+    minutes = max(1, min(minutes, 2880))
+
+    from jarvis.api.deps import get_store
+
+    column = _METRIC_COLUMNS[metric]
+    samples = [
+        row[column]
+        for row in get_store().metric_history(minutes=minutes)
+        if row[column] is not None
+    ]
+    if not samples:
+        return {
+            "metric": metric,
+            "minutes": minutes,
+            "samples": 0,
+            "message": (
+                "No history yet -- Jarvis samples every 30 seconds and has not "
+                "been running long enough."
+            ),
+        }
+
+    midpoint = len(samples) // 2 or 1
+    first_half = sum(samples[:midpoint]) / midpoint
+    second_half = sum(samples[midpoint:]) / max(1, len(samples) - midpoint)
+    change = second_half - first_half
+
+    return {
+        "metric": metric,
+        "minutes": minutes,
+        "samples": len(samples),
+        "average_percent": round(sum(samples) / len(samples), 1),
+        "peak_percent": round(max(samples), 1),
+        "low_percent": round(min(samples), 1),
+        "latest_percent": round(samples[-1], 1),
+        "trend": "rising" if change > 5 else "falling" if change < -5 else "steady",
+        "change_percent": round(change, 1),
+    }
 
 
 @tool(

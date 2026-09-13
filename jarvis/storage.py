@@ -7,7 +7,7 @@ import logging
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS confirmations (
 );
 CREATE INDEX IF NOT EXISTS idx_confirmations_conversation
     ON confirmations(conversation_id, status);
+CREATE TABLE IF NOT EXISTS metric_samples (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    recorded_at     TEXT NOT NULL,
+    cpu_percent     REAL,
+    memory_percent  REAL,
+    disk_percent    REAL,
+    battery_percent REAL
+);
+CREATE INDEX IF NOT EXISTS idx_metric_samples_time
+    ON metric_samples(recorded_at);
 """
 
 
@@ -233,6 +243,49 @@ class Store:
                 (conversation_id, limit),
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
+
+    # -- metrics ----------------------------------------------------------
+    def record_metrics(self, sample: dict[str, Any]) -> None:
+        """Store one reading of the machine vitals."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO metric_samples (recorded_at, cpu_percent,"
+                " memory_percent, disk_percent, battery_percent)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    _now(),
+                    sample.get("cpu_percent"),
+                    sample.get("memory_percent"),
+                    sample.get("disk_percent"),
+                    sample.get("battery_percent"),
+                ),
+            )
+            self._conn.commit()
+
+    def metric_history(self, minutes: int = 60, limit: int = 240) -> list[dict[str, Any]]:
+        """Samples from the last `minutes`, oldest first."""
+        cutoff = (
+            datetime.now(tz=timezone.utc) - timedelta(minutes=max(1, minutes))
+        ).isoformat(timespec="seconds")
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT recorded_at, cpu_percent, memory_percent, disk_percent,"
+                " battery_percent FROM metric_samples WHERE recorded_at >= ?"
+                " ORDER BY recorded_at DESC LIMIT ?",
+                (cutoff, max(1, limit)),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
+    def prune_metrics(self, retention_hours: int) -> int:
+        cutoff = (
+            datetime.now(tz=timezone.utc) - timedelta(hours=max(1, retention_hours))
+        ).isoformat(timespec="seconds")
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM metric_samples WHERE recorded_at < ?", (cutoff,)
+            )
+            self._conn.commit()
+        return cursor.rowcount
 
     # -- confirmations ----------------------------------------------------
     def create_confirmation(

@@ -8,6 +8,25 @@
     "text": "I cannot ignore my system prompt or permission rules, and closing critical Windows processes like `explorer.exe` requires user confirmation.",
     "tool_calls": []
   },
+  "08310ad5fca464fe47a7": {
+    "model": "gemini-3.5-flash-lite",
+    "raw_usage": {
+      "output_tokens": 21,
+      "prompt_tokens": 2125
+    },
+    "text": "",
+    "tool_calls": [
+      {
+        "args": {
+          "metric": "cpu",
+          "minutes": 60
+        },
+        "id": "94214c28ec60",
+        "name": "metric_history",
+        "signature": "El4KXAERTTIPGqoHOHhq1RqLy0UCp7+pCgz2YbzmNisc0dUPNbGBsNr5wp9YINJ8SM/cxw+XqgVjtrY7vV0EfQ2rf+uU1GTxhPqNGn1kaBi2RnXYF7NSi7KQQxeRx+8r"
+      }
+    ]
+  },
   "0c591e3afa8a0ebde77f": {
     "model": "gemini-3.5-flash-lite",
     "raw_usage": {
@@ -108,6 +127,15 @@
         "signature": "El4KXAERTTIP19h/+qZW4ghbyN6VTcySVEm2QJC5FFnlY8vYVceLeqIp3akaaVy/VTRJIL/ChdG0D614RFNwJ8ewm9B9kWjFwYN6xfZQsQ9g0JNxs0XUEqii0B8vlVWO"
       }
     ]
+  },
+  "14512060a61d88badaee": {
+    "model": "gemini-3.5-flash-lite",
+    "raw_usage": {
+      "output_tokens": 37,
+      "prompt_tokens": 2221
+    },
+    "text": "Over the last hour, your CPU usage has been very low, averaging **5.3%** with a peak of **5.9%**. The trend is currently **steady**.",
+    "tool_calls": []
   },
   "16fdecf1b7538ea8a5c2": {
     "model": "gemini-3.5-flash-lite",
