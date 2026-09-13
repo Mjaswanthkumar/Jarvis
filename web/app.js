@@ -226,17 +226,59 @@
 
   async function poll() {
     try {
-      const [system, activity] = await Promise.all([
+      const [system, activity, alerts] = await Promise.all([
         api("/system"),
         api("/activity?limit=12"),
+        api("/alerts"),
       ]);
       renderSystem(system);
       renderActivity(activity);
+      renderAlerts(alerts.alerts || []);
       setStatus(true, "online");
       refreshHistory(false);
     } catch (error) {
       if (error.unauthorized) return logout("Session expired.");
       setStatus(false, "offline");
+    }
+  }
+
+  //: Alert ids already shown, so polling does not repeat them.
+  const shownAlerts = new Set();
+
+  /** Surface something Jarvis noticed on its own, inline in the conversation. */
+  function renderAlerts(rows) {
+    for (const alert of rows) {
+      if (shownAlerts.has(alert.id)) continue;
+      shownAlerts.add(alert.id);
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "msg assistant";
+      const card = document.createElement("div");
+      card.className = "bubble alert-card";
+      card.innerHTML =
+        '<div class="alert-head">Jarvis noticed</div>' +
+        "<div>" + escapeHtml(alert.message) + "</div>";
+
+      const dismiss = document.createElement("button");
+      dismiss.className = "starter dismiss";
+      dismiss.textContent = "Dismiss";
+      dismiss.addEventListener("click", async () => {
+        wrapper.remove();
+        try {
+          await api("/alerts/acknowledge", {
+            method: "POST",
+            body: JSON.stringify({ alert_ids: [alert.id] }),
+          });
+        } catch (error) {
+          if (error.unauthorized) logout("Session expired.");
+        }
+      });
+      card.appendChild(dismiss);
+      wrapper.appendChild(card);
+      els.messages.appendChild(wrapper);
+      els.messages.scrollTop = els.messages.scrollHeight;
+
+      if (speakReplies) voice.speak(alert.message);
     }
   }
 

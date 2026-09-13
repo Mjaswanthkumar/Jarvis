@@ -25,6 +25,7 @@ from jarvis import __version__
 from jarvis.agent import AgentResult, JarvisAgent
 from jarvis.api.deps import get_agent, get_store, require_auth
 from jarvis.api.schemas import (
+    AcknowledgeRequest,
     ChatRequest,
     ChatResponse,
     ConfirmRequest,
@@ -83,6 +84,24 @@ def metrics_history(
         "interval_seconds": SAMPLE_INTERVAL_SECONDS,
         "samples": samples,
     }
+
+
+@api.get("/alerts")
+def alerts(store: Store = Depends(get_store)) -> dict[str, Any]:
+    """Things Jarvis noticed without being asked."""
+    return {"alerts": store.list_alerts(unacknowledged_only=True, limit=10)}
+
+
+@api.post("/alerts/acknowledge")
+def acknowledge_alerts(
+    payload: AcknowledgeRequest, store: Store = Depends(get_store)
+) -> dict[str, int]:
+    return {"acknowledged": store.acknowledge_alerts(payload.alert_ids or None)}
+
+
+@api.get("/watches")
+def watches_list(store: Store = Depends(get_store)) -> dict[str, Any]:
+    return {"watches": store.list_watches()}
 
 
 @api.get("/tools", response_model=list[ToolInfo])

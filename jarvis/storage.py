@@ -69,6 +69,27 @@ CREATE TABLE IF NOT EXISTS metric_samples (
 );
 CREATE INDEX IF NOT EXISTS idx_metric_samples_time
     ON metric_samples(recorded_at);
+CREATE TABLE IF NOT EXISTS watches (
+    id           TEXT PRIMARY KEY,
+    metric       TEXT NOT NULL,
+    comparison   TEXT NOT NULL,
+    threshold    REAL NOT NULL,
+    note         TEXT NOT NULL DEFAULT '',
+    streak       INTEGER NOT NULL DEFAULT 0,
+    last_fired_at TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS alerts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id    TEXT,
+    metric      TEXT NOT NULL,
+    message     TEXT NOT NULL,
+    value       REAL NOT NULL,
+    acknowledged INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_alerts_unacknowledged
+    ON alerts(acknowledged, id);
 """
 
 
@@ -284,6 +305,128 @@ class Store:
             cursor = self._conn.execute(
                 "DELETE FROM metric_samples WHERE recorded_at < ?", (cutoff,)
             )
+            self._conn.commit()
+        return cursor.rowcount
+
+    # -- watches and alerts -----------------------------------------------
+    def create_watch(
+        self,
+        metric: str,
+        comparison: str,
+        threshold: float,
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Register a condition to be told about. Replaces an identical one."""
+        existing = self.find_watch(metric, comparison, threshold)
+        if existing:
+            return existing
+
+        watch_id = uuid.uuid4().hex[:12]
+        row = {
+            "id": watch_id,
+            "metric": metric,
+            "comparison": comparison,
+            "threshold": threshold,
+            "note": note,
+            "streak": 0,
+            "last_fired_at": None,
+            "created_at": _now(),
+        }
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO watches (id, metric, comparison, threshold, note,"
+                " streak, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
+                (watch_id, metric, comparison, threshold, note, row["created_at"]),
+            )
+            self._conn.commit()
+        return row
+
+    def find_watch(
+        self, metric: str, comparison: str, threshold: float
+    ) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM watches WHERE metric = ? AND comparison = ?"
+                " AND threshold = ?",
+                (metric, comparison, threshold),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_watches(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM watches ORDER BY created_at DESC"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_watch(self, watch_id: str) -> bool:
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM watches WHERE id = ?", (watch_id,)
+            )
+            self._conn.commit()
+        return cursor.rowcount > 0
+
+    def set_watch_streak(self, watch_id: str, streak: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE watches SET streak = ? WHERE id = ?", (streak, watch_id)
+            )
+            self._conn.commit()
+
+    def mark_watch_fired(self, watch_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE watches SET last_fired_at = ?, streak = 0 WHERE id = ?",
+                (_now(), watch_id),
+            )
+            self._conn.commit()
+
+    def record_alert(
+        self, watch_id: str | None, metric: str, message: str, value: float
+    ) -> dict[str, Any]:
+        with self._lock:
+            cursor = self._conn.execute(
+                "INSERT INTO alerts (watch_id, metric, message, value, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (watch_id, metric, message, value, _now()),
+            )
+            self._conn.commit()
+        return {
+            "id": cursor.lastrowid,
+            "watch_id": watch_id,
+            "metric": metric,
+            "message": message,
+            "value": value,
+            "acknowledged": False,
+        }
+
+    def list_alerts(
+        self, unacknowledged_only: bool = True, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM alerts"
+        if unacknowledged_only:
+            query += " WHERE acknowledged = 0"
+        query += " ORDER BY id DESC LIMIT ?"
+        with self._lock:
+            rows = self._conn.execute(query, (max(1, limit),)).fetchall()
+        return [
+            {**dict(row), "acknowledged": bool(row["acknowledged"])}
+            for row in reversed(rows)
+        ]
+
+    def acknowledge_alerts(self, alert_ids: list[int] | None = None) -> int:
+        with self._lock:
+            if alert_ids:
+                placeholders = ",".join("?" * len(alert_ids))
+                cursor = self._conn.execute(
+                    f"UPDATE alerts SET acknowledged = 1 WHERE id IN ({placeholders})",
+                    alert_ids,
+                )
+            else:
+                cursor = self._conn.execute(
+                    "UPDATE alerts SET acknowledged = 1 WHERE acknowledged = 0"
+                )
             self._conn.commit()
         return cursor.rowcount
 

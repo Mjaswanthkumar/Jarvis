@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import psutil
+
+from jarvis import watches
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +52,16 @@ def take_sample() -> dict[str, float | None]:
     }
 
 
+def _in_cooldown(last_fired_at: str | None, now: datetime) -> bool:
+    if not last_fired_at:
+        return False
+    try:
+        fired = datetime.fromisoformat(last_fired_at)
+    except ValueError:  # pragma: no cover - corrupt row
+        return False
+    return now - fired < timedelta(minutes=watches.COOLDOWN_MINUTES)
+
+
 class MetricSampler:
     """Records a sample on an interval until stopped."""
 
@@ -71,7 +84,9 @@ class MetricSampler:
         while True:
             try:
                 await asyncio.sleep(self._interval)
-                self._store.record_metrics(take_sample())
+                sample = take_sample()
+                self._store.record_metrics(sample)
+                self._check_watches(sample)
 
                 now = asyncio.get_running_loop().time()
                 if now - pruned_at > 3600:
@@ -83,6 +98,45 @@ class MetricSampler:
                 raise
             except Exception:  # a sampling failure must not kill the loop
                 logger.exception("metric sampling failed")
+
+    def _check_watches(self, sample: dict[str, float | None]) -> None:
+        """Raise an alert for any watch this sample breaches.
+
+        A watch must breach several samples in a row before it fires, and then
+        stays quiet for a cooldown -- otherwise a metric sitting on its
+        threshold produces an alert every interval, which trains the user to
+        ignore all of them.
+        """
+        defined = self._store.list_watches()
+        if not defined:
+            return
+
+        breaching = {
+            watch["id"]: value for watch, value in watches.evaluate(defined, sample)
+        }
+        now = datetime.now(tz=timezone.utc)
+
+        for watch in defined:
+            value = breaching.get(watch["id"])
+            if value is None:
+                if watch["streak"]:
+                    self._store.set_watch_streak(watch["id"], 0)
+                continue
+
+            streak = watch["streak"] + 1
+            if streak < watches.CONSECUTIVE_SAMPLES:
+                self._store.set_watch_streak(watch["id"], streak)
+                continue
+
+            if _in_cooldown(watch.get("last_fired_at"), now):
+                continue
+
+            message = watches.alert_text(watch, value)
+            self._store.record_alert(
+                watch["id"], watch["metric"], message, value
+            )
+            self._store.mark_watch_fired(watch["id"])
+            logger.info("watch fired: %s", message)
 
     def start(self) -> None:
         if self._task is None or self._task.done():

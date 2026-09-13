@@ -43,6 +43,12 @@ class ConfirmRequest(BaseModel):
     approve: bool
 
 
+class AcknowledgeRequest(BaseModel):
+    """Empty list means "everything currently unacknowledged"."""
+
+    alert_ids: list[int] = Field(default_factory=list)
+
+
 class TranscriptionResponse(BaseModel):
     text: str
 

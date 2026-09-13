@@ -42,6 +42,19 @@
   expect_tools: [network_info]
   max_tools: 3
 
+- id: create_a_watch
+  category: watches
+  prompt: Tell me if my disk space ever drops below 10 percent
+  expect_tools: [create_watch]
+  expect_decision: allow
+  max_tools: 2
+
+- id: list_active_watches
+  category: watches
+  prompt: What are you currently watching for?
+  expect_tools: [list_watches]
+  max_tools: 2
+
 - id: cpu_trend_uses_history
   category: system
   prompt: Has my CPU been busy over the last hour, and is it trending up or down?

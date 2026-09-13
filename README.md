@@ -29,6 +29,19 @@ An empty conversation offers starter prompts and a browsable catalogue of every
 tool, so the capabilities are discoverable rather than guessed at. `☰` lists past
 conversations; `✚` (or `Ctrl`/`Cmd`+`K`) starts a new one.
 
+### Proactive watches
+
+Ask *"tell me when my disk drops below 10%"* and Jarvis keeps watching after the
+conversation ends. The sampler evaluates every watch on each 30-second sample;
+a condition must breach twice in a row before it fires, and then stays quiet for
+30 minutes, so a metric sitting on its threshold cannot produce an alert every
+interval. Alerts appear in the conversation and are read aloud if voice replies
+are on.
+
+The condition itself is a comparison against a number, evaluated in plain
+Python — not an LLM loop. The model's job is turning the request into that
+comparison, which it does once, at creation time.
+
 ### Voice
 
 Click the 🎙 button (or the 🔊 toggle to have replies read back). Speech
@@ -119,6 +132,9 @@ redirection and substitution are all rejected.
 | `list_processes` | READ_ONLY | Top processes by CPU or memory |
 | `list_open_windows` | READ_ONLY | Apps with visible windows — "what do I have open?" |
 | `metric_history` | READ_ONLY | How CPU/memory/disk/battery have behaved over time, with average, peak and trend |
+| `create_watch` | LOW_RISK | Watch a metric and report when it crosses a threshold, unprompted |
+| `list_watches` | READ_ONLY | Conditions Jarvis is currently watching for |
+| `delete_watch` | LOW_RISK | Stop watching a condition |
 | `search_files` | READ_ONLY | Substring or glob search inside the sandbox |
 | `list_directory` | READ_ONLY | Folder contents with sizes |
 | `read_text_file` | READ_ONLY | Text/source files; refuses binaries and credential files |
@@ -164,6 +180,9 @@ hard-coded.
 | `GET /api/health` | Version, provider, tool count |
 | `GET /api/system` | Live CPU/RAM/disk/battery snapshot |
 | `GET /api/metrics/history` | Recorded vitals for the dashboard sparklines |
+| `GET /api/alerts` | Things Jarvis noticed without being asked |
+| `POST /api/alerts/acknowledge` | Dismiss alerts |
+| `GET /api/watches` | Active watch conditions |
 | `GET /api/tools` | Tool catalogue with permission levels |
 | `POST /api/chat` | `{message, conversation_id?, approved_tools?}` |
 | `POST /api/conversations` | Start a new conversation |

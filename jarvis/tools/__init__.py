@@ -8,6 +8,7 @@ from jarvis.tools import (  # noqa: F401,E402
     git_tools,
     system,
     terminal,
+    watch_tools,
 )
 from jarvis.tools.permissions import PermissionLevel
 from jarvis.tools.registry import REGISTRY, ToolSpec, tool

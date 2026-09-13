@@ -760,3 +760,46 @@ def test_the_sampler_runs_while_the_app_is_up(
     deps.get_store().close()
     deps.get_store.cache_clear()
     get_settings.cache_clear()
+
+
+def test_alerts_endpoint_and_acknowledgement(client: TestClient) -> None:
+    from jarvis.api import deps
+
+    store = deps.get_store()
+    watch = store.create_watch("disk", "below", 10.0)
+    store.record_alert(watch["id"], "disk", "Disk has dropped below 10%", 7.0)
+
+    body = client.get("/api/alerts", headers=HEADERS).json()
+    assert len(body["alerts"]) == 1
+    alert_id = body["alerts"][0]["id"]
+
+    acked = client.post(
+        "/api/alerts/acknowledge", headers=HEADERS, json={"alert_ids": [alert_id]}
+    ).json()
+    assert acked["acknowledged"] == 1
+    assert client.get("/api/alerts", headers=HEADERS).json()["alerts"] == []
+
+
+def test_acknowledging_everything(client: TestClient) -> None:
+    from jarvis.api import deps
+
+    store = deps.get_store()
+    for value in (1.0, 2.0):
+        store.record_alert(None, "cpu", "high", value)
+    acked = client.post(
+        "/api/alerts/acknowledge", headers=HEADERS, json={}
+    ).json()
+    assert acked["acknowledged"] >= 2
+
+
+def test_alerts_require_auth(client: TestClient) -> None:
+    assert client.get("/api/alerts").status_code == 401
+    assert client.post("/api/alerts/acknowledge", json={}).status_code == 401
+
+
+def test_watches_endpoint_lists_conditions(client: TestClient) -> None:
+    from jarvis.api import deps
+
+    deps.get_store().create_watch("cpu", "above", 95.0, "sustained load")
+    body = client.get("/api/watches", headers=HEADERS).json()
+    assert any(w["threshold"] == 95.0 for w in body["watches"])
