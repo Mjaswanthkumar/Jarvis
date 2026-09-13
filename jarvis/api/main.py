@@ -234,9 +234,26 @@ async def transcribe(audio: UploadFile = File(...)) -> TranscriptionResponse:
     return TranscriptionResponse(text=text.strip())
 
 
+@api.post("/conversations", response_model=ConversationInfo, status_code=201)
+def new_conversation(store: Store = Depends(get_store)) -> ConversationInfo:
+    """Start a fresh thread, so topics do not accrete into one long history."""
+    conversation_id = store.create_conversation()
+    row = next(
+        row
+        for row in store.list_conversations(limit=5)
+        if row["id"] == conversation_id
+    )
+    return ConversationInfo(**row)
+
+
 @api.get("/conversations", response_model=list[ConversationInfo])
-def conversations(store: Store = Depends(get_store)) -> list[ConversationInfo]:
-    return [ConversationInfo(**row) for row in store.list_conversations()]
+def conversations(
+    limit: int = 20, store: Store = Depends(get_store)
+) -> list[ConversationInfo]:
+    return [
+        ConversationInfo(**row)
+        for row in store.list_conversations(limit=max(1, min(limit, 100)))
+    ]
 
 
 @api.get("/conversations/{conversation_id}", response_model=TranscriptResponse)

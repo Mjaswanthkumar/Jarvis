@@ -462,3 +462,105 @@ def test_transcribe_reports_provider_failure(
 
 def test_health_advertises_transcription_support(client: TestClient) -> None:
     assert "transcription" in client.get("/api/health", headers=HEADERS).json()
+
+
+# ------------------------------------------------- conversation management ----
+def test_new_conversation_returns_an_empty_thread(client: TestClient) -> None:
+    """Without this, every topic accretes into one silently-truncated thread."""
+    body = client.post("/api/conversations", headers=HEADERS).json()
+    assert body["id"]
+    assert body["message_count"] == 0
+    assert body["title"] == ""
+
+
+def test_new_conversation_requires_auth(client: TestClient) -> None:
+    assert client.post("/api/conversations").status_code == 401
+
+
+def test_conversations_report_visible_message_counts(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The count drives the switcher, so hidden and tool turns must not inflate it."""
+    from jarvis.api import deps
+    from jarvis.llm.base import Message
+
+    store = deps.get_store()
+    conversation_id = store.create_conversation()
+    store.add_messages(
+        conversation_id,
+        [
+            Message.user("visible question"),
+            Message.assistant("visible answer"),
+            Message.user("[jarvis] internal", hidden=True),
+            Message.tool("cpu_info", "{}"),
+        ],
+    )
+    row = next(
+        r
+        for r in client.get("/api/conversations", headers=HEADERS).json()
+        if r["id"] == conversation_id
+    )
+    assert row["message_count"] == 2
+
+
+def test_conversations_are_ordered_most_recent_first(client: TestClient) -> None:
+    from jarvis.api import deps
+
+    store = deps.get_store()
+    older = store.create_conversation()
+    newer = store.create_conversation()
+    ids = [r["id"] for r in client.get("/api/conversations", headers=HEADERS).json()]
+    assert ids.index(newer) < ids.index(older)
+
+
+def test_long_first_messages_become_readable_titles(client: TestClient) -> None:
+    """A raw 4000-character message would make the switcher unusable."""
+    from jarvis.api import deps
+
+    store = deps.get_store()
+    conversation_id = store.create_conversation()
+    store.set_title_if_empty(
+        conversation_id,
+        "Please tell me in considerable detail   which of my running processes "
+        "are consuming the most memory right now and why that might be",
+    )
+    row = next(
+        r
+        for r in client.get("/api/conversations", headers=HEADERS).json()
+        if r["id"] == conversation_id
+    )
+    assert len(row["title"]) <= 60
+    assert row["title"].endswith("…")
+    assert "  " not in row["title"]
+
+
+def test_a_title_is_only_set_once(client: TestClient) -> None:
+    from jarvis.api import deps
+
+    store = deps.get_store()
+    conversation_id = store.create_conversation()
+    store.set_title_if_empty(conversation_id, "first question")
+    store.set_title_if_empty(conversation_id, "second question")
+    row = next(
+        r
+        for r in client.get("/api/conversations", headers=HEADERS).json()
+        if r["id"] == conversation_id
+    )
+    assert row["title"] == "first question"
+
+
+def test_conversation_limit_is_clamped(client: TestClient) -> None:
+    assert client.get("/api/conversations?limit=99999", headers=HEADERS).status_code == 200
+    assert client.get("/api/conversations?limit=0", headers=HEADERS).status_code == 200
+
+
+def test_tools_endpoint_gives_the_ui_what_it_needs_to_explain_itself(
+    client: TestClient,
+) -> None:
+    """The capability sheet groups by first tag and labels by permission."""
+    rows = client.get("/api/tools", headers=HEADERS).json()
+    assert len(rows) >= 28
+    for row in rows:
+        assert row["tags"], f"{row['name']} has no tag to group under"
+        assert row["permission"] in {"READ_ONLY", "LOW_RISK", "CONFIRM_REQUIRED"}
+        assert len(row["description"]) > 20

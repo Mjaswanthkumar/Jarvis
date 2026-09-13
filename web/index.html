@@ -34,6 +34,7 @@
     <div id="app" class="app" hidden>
       <header class="topbar">
         <div class="brand">
+          <button class="icon-btn menu" id="menu" title="Conversations" aria-label="Conversations">☰</button>
           <span class="logo">J</span>
           <div>
             <strong>JARVIS</strong>
@@ -51,6 +52,7 @@
           >
             🔈
           </button>
+          <button class="icon-btn" id="new-chat" title="New conversation" aria-label="New conversation">✚</button>
           <button class="icon-btn" id="logout" title="Disconnect">⏻</button>
         </div>
       </header>
@@ -80,15 +82,7 @@
 
       <main class="main">
         <section class="chat-pane">
-          <div class="messages" id="messages">
-            <div class="msg assistant">
-              <div class="bubble">
-                Jarvis online. Ask me about your PC — try
-                <em>"how is my PC doing?"</em> or
-                <em>"what's using the most memory?"</em>
-              </div>
-            </div>
-          </div>
+          <div class="messages" id="messages"></div>
           <div class="voice-status" id="voice-status" hidden>
             <span class="pulse"></span>
             <span id="voice-text">Listening…</span>
@@ -121,9 +115,28 @@
           </ul>
         </aside>
       </main>
+
+      <div class="scrim" id="drawer-scrim" hidden></div>
+      <nav class="drawer" id="drawer" hidden aria-label="Conversations">
+        <div class="panel-head">
+          <strong>Conversations</strong>
+          <button class="icon-btn" id="drawer-close" aria-label="Close">✕</button>
+        </div>
+        <button class="panel-action" id="drawer-new">✚ New conversation</button>
+        <ul class="conversations" id="conversations"></ul>
+      </nav>
+
+      <div class="scrim" id="sheet-scrim" hidden></div>
+      <section class="sheet" id="sheet" hidden aria-label="What Jarvis can do">
+        <div class="panel-head">
+          <strong>What Jarvis can do</strong>
+          <button class="icon-btn" id="sheet-close" aria-label="Close">✕</button>
+        </div>
+        <div class="sheet-body" id="sheet-body"></div>
+      </section>
     </div>
 
-    <script src="/static/voice.js?v=6"></script>
-    <script src="/static/app.js?v=6"></script>
+    <script src="/static/voice.js?v=7"></script>
+    <script src="/static/app.js?v=7"></script>
   </body>
 </html>

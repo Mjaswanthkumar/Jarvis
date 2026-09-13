@@ -21,6 +21,10 @@ copy .env.example .env     # then set GEMINI_API_KEY and JARVIS_AUTH_TOKEN
 
 Open <http://127.0.0.1:8010> and paste your `JARVIS_AUTH_TOKEN` to connect.
 
+An empty conversation offers starter prompts and a browsable catalogue of every
+tool, so the capabilities are discoverable rather than guessed at. `☰` lists past
+conversations; `✚` (or `Ctrl`/`Cmd`+`K`) starts a new one.
+
 ### Voice
 
 Click the 🎙 button (or the 🔊 toggle to have replies read back). Speech
@@ -156,7 +160,8 @@ hard-coded.
 | `GET /api/system` | Live CPU/RAM/disk/battery snapshot |
 | `GET /api/tools` | Tool catalogue with permission levels |
 | `POST /api/chat` | `{message, conversation_id?, approved_tools?}` |
-| `GET /api/conversations` | Recent conversations |
+| `POST /api/conversations` | Start a new conversation |
+| `GET /api/conversations` | Recent conversations, with visible message counts |
 | `GET /api/conversations/{id}` | Transcript |
 | `DELETE /api/conversations/{id}` | Delete a conversation |
 | `POST /api/confirm` | `{confirmation_id, approve}` — run or cancel a pending action |

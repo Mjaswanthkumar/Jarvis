@@ -108,17 +108,26 @@ class Store:
     def list_conversations(self, limit: int = 20) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id, title, created_at, updated_at FROM conversations"
-                " ORDER BY updated_at DESC LIMIT ?",
+                "SELECT c.id, c.title, c.created_at, c.updated_at,"
+                " (SELECT COUNT(*) FROM messages m"
+                "  WHERE m.conversation_id = c.id AND m.hidden = 0"
+                "    AND m.role IN ('user', 'assistant') AND m.content != ''"
+                " ) AS message_count"
+                " FROM conversations c"
+                " ORDER BY c.updated_at DESC, c.rowid DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [dict(row) for row in rows]
 
     def set_title_if_empty(self, conversation_id: str, title: str) -> None:
+        """Name a thread after its opening question, trimmed to fit a list."""
+        cleaned = " ".join(title.split())
+        if len(cleaned) > 60:
+            cleaned = cleaned[:57].rstrip(" ,.;:") + "…"
         with self._lock:
             self._conn.execute(
                 "UPDATE conversations SET title = ? WHERE id = ? AND title = ''",
-                (title[:80], conversation_id),
+                (cleaned, conversation_id),
             )
             self._conn.commit()
 

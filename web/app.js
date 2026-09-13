@@ -30,7 +30,27 @@
     speakToggle: $("speak-toggle"),
     voiceStatus: $("voice-status"),
     voiceText: $("voice-text"),
+    menu: $("menu"),
+    newChat: $("new-chat"),
+    drawer: $("drawer"),
+    drawerScrim: $("drawer-scrim"),
+    drawerClose: $("drawer-close"),
+    drawerNew: $("drawer-new"),
+    conversations: $("conversations"),
+    sheet: $("sheet"),
+    sheetScrim: $("sheet-scrim"),
+    sheetClose: $("sheet-close"),
+    sheetBody: $("sheet-body"),
   };
+
+  //: Shown in an empty conversation so a new user knows what to ask for.
+  const STARTERS = [
+    "How is my PC doing?",
+    "What is using the most memory?",
+    "What apps do I have open?",
+    "What is eating my disk space?",
+    "Is Docker running?",
+  ];
 
   const SPEAK_KEY = "jarvis.speak";
 
@@ -307,6 +327,8 @@
   }
 
   async function send(message) {
+    const welcome = els.messages.querySelector(".welcome");
+    if (welcome) welcome.closest(".msg").remove();
     addMessage("user", escapeHtml(message));
     const typing = addTyping();
     els.send.disabled = true;
@@ -332,6 +354,173 @@
       els.send.disabled = false;
       if (!isTouchDevice()) els.input.focus();
     }
+  }
+
+  /* ---------- conversations ---------- */
+  function openPanel(panel, scrim) {
+    panel.hidden = false;
+    scrim.hidden = false;
+  }
+
+  function closePanels() {
+    els.drawer.hidden = true;
+    els.drawerScrim.hidden = true;
+    els.sheet.hidden = true;
+    els.sheetScrim.hidden = true;
+  }
+
+  async function showConversations() {
+    openPanel(els.drawer, els.drawerScrim);
+    els.conversations.innerHTML = '<li class="empty">Loading...</li>';
+    try {
+      renderConversations(await api("/conversations?limit=30"));
+    } catch (error) {
+      if (error.unauthorized) return logout("Session expired.");
+      els.conversations.innerHTML =
+        '<li class="empty">' + escapeHtml(error.message) + "</li>";
+    }
+  }
+
+  function renderConversations(rows) {
+    const usable = rows.filter(
+      (row) => row.message_count > 0 || row.id === conversationId
+    );
+    if (!usable.length) {
+      els.conversations.innerHTML = '<li class="empty">No conversations yet.</li>';
+      return;
+    }
+    els.conversations.innerHTML = "";
+    for (const row of usable) {
+      const li = document.createElement("li");
+      if (row.id === conversationId) li.className = "current";
+
+      const open = document.createElement("button");
+      open.className = "conversation";
+      const plural = row.message_count === 1 ? "" : "s";
+      open.innerHTML =
+        '<span class="title">' + escapeHtml(row.title || "Untitled") + "</span>" +
+        '<span class="meta">' + row.message_count + " message" + plural +
+        " \u00b7 " + relativeTime(row.updated_at) + "</span>";
+      open.addEventListener("click", () => switchConversation(row.id));
+
+      const remove = document.createElement("button");
+      remove.className = "icon-btn delete";
+      remove.textContent = "\u2715";
+      remove.title = "Delete this conversation";
+      remove.addEventListener("click", (event) => {
+        event.stopPropagation();
+        deleteConversation(row.id);
+      });
+
+      li.append(open, remove);
+      els.conversations.appendChild(li);
+    }
+  }
+
+  function relativeTime(iso) {
+    const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (seconds < 90) return "just now";
+    if (seconds < 3600) return Math.round(seconds / 60) + "m ago";
+    if (seconds < 86400) return Math.round(seconds / 3600) + "h ago";
+    return Math.round(seconds / 86400) + "d ago";
+  }
+
+  async function switchConversation(id) {
+    conversationId = id;
+    storageSet(CONV_KEY, id);
+    closePanels();
+    els.messages.innerHTML = "";
+    await loadHistory();
+  }
+
+  async function startNewConversation() {
+    voice.stopSpeaking();
+    closePanels();
+    try {
+      const created = await api("/conversations", { method: "POST" });
+      conversationId = created.id;
+      storageSet(CONV_KEY, created.id);
+    } catch (error) {
+      if (error.unauthorized) return logout("Session expired.");
+      // A failed create must not strand the user in the old thread.
+      conversationId = null;
+      storageSet(CONV_KEY, null);
+    }
+    els.messages.innerHTML = "";
+    showWelcome();
+    if (!isTouchDevice()) els.input.focus();
+  }
+
+  async function deleteConversation(id) {
+    try {
+      await api("/conversations/" + id, { method: "DELETE" });
+    } catch (error) {
+      if (error.unauthorized) return logout("Session expired.");
+    }
+    if (id === conversationId) await startNewConversation();
+    showConversations();
+  }
+
+  /* ---------- capabilities ---------- */
+  function showWelcome() {
+    const chips = STARTERS.map(
+      (text) => '<button class="starter">' + escapeHtml(text) + "</button>"
+    ).join("");
+    const wrapper = addMessage(
+      "assistant",
+      '<span class="welcome"></span>Jarvis online. Ask about this PC in plain ' +
+        "language, or start with one of these:" +
+        '<div class="starters">' + chips + "</div>" +
+        '<button class="link-btn" id="see-all">See everything Jarvis can do</button>'
+    );
+    wrapper.querySelectorAll(".starter").forEach((button, index) => {
+      button.addEventListener("click", () => {
+        els.input.value = "";
+        send(STARTERS[index]);
+      });
+    });
+    wrapper.querySelector("#see-all").addEventListener("click", showCapabilities);
+  }
+
+  const PERMISSION_LABEL = {
+    READ_ONLY: ["Reads only", "ok"],
+    LOW_RISK: ["Small change", "warn"],
+    CONFIRM_REQUIRED: ["Asks first", "bad"],
+  };
+
+  async function showCapabilities() {
+    openPanel(els.sheet, els.sheetScrim);
+    els.sheetBody.innerHTML = '<p class="empty">Loading...</p>';
+    try {
+      renderCapabilities(await api("/tools"));
+    } catch (error) {
+      if (error.unauthorized) return logout("Session expired.");
+      els.sheetBody.innerHTML =
+        '<p class="empty">' + escapeHtml(error.message) + "</p>";
+    }
+  }
+
+  function renderCapabilities(tools) {
+    const groups = {};
+    for (const tool of tools) {
+      const key = tool.tags[0] || "other";
+      (groups[key] = groups[key] || []).push(tool);
+    }
+    els.sheetBody.innerHTML = Object.entries(groups)
+      .map(([group, items]) => {
+        const rows = items
+          .map((tool) => {
+            const pair = PERMISSION_LABEL[tool.permission] || [tool.permission, ""];
+            return (
+              "<li><div class=\"tool-row\"><code>" + escapeHtml(tool.name) +
+              '</code><span class="tag ' + pair[1] + '">' + pair[0] +
+              "</span></div><p>" + escapeHtml(tool.description) + "</p></li>"
+            );
+          })
+          .join("");
+        return "<h3>" + escapeHtml(group) + '</h3><ul class="tool-list">' + rows + "</ul>";
+      })
+      .join("");
   }
 
   /* ---------- voice ---------- */
@@ -452,11 +641,11 @@
   }
 
   async function loadHistory() {
-    if (!conversationId) return;
+    if (!conversationId) return showWelcome();
     try {
       const data = await api(`/conversations/${conversationId}`);
-      if (!data.messages.length) return;
       els.messages.innerHTML = "";
+      if (!data.messages.length) return showWelcome();
       for (const message of data.messages) {
         addMessage(
           message.role === "user" ? "user" : "assistant",
@@ -466,6 +655,8 @@
     } catch {
       storageSet(CONV_KEY, null);
       conversationId = null;
+      els.messages.innerHTML = "";
+      showWelcome();
     }
   }
 
@@ -535,6 +726,22 @@
   });
 
   els.logout.addEventListener("click", () => logout(""));
+  els.menu.addEventListener("click", showConversations);
+  els.newChat.addEventListener("click", startNewConversation);
+  els.drawerNew.addEventListener("click", startNewConversation);
+  els.drawerClose.addEventListener("click", closePanels);
+  els.drawerScrim.addEventListener("click", closePanels);
+  els.sheetClose.addEventListener("click", closePanels);
+  els.sheetScrim.addEventListener("click", closePanels);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closePanels();
+    // Ctrl/Cmd+K is the near-universal "start something new" shortcut.
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      startNewConversation();
+    }
+  });
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {

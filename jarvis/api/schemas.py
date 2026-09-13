@@ -70,6 +70,8 @@ class ConversationInfo(BaseModel):
     title: str
     created_at: str
     updated_at: str
+    #: Visible turns, so the switcher can show which threads have substance.
+    message_count: int = 0
 
 
 class TranscriptResponse(BaseModel):
