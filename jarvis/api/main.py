@@ -157,6 +157,7 @@ def _persist_turn(
             event.error,
             event.duration_ms,
             event.decision.value,
+            event.result_preview,
         )
 
     suspicious = result.saw_injection_attempt

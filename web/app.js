@@ -207,6 +207,27 @@
       <div class="row"><span class="meta${row.ok ? "" : " bad"}">${
         row.ok ? "ok" : escapeHtml(row.error || "failed")
       }</span><span class="meta">${row.duration_ms} ms</span></div>`;
+
+      if (row.result_preview || Object.keys(row.args || {}).length) {
+        li.classList.add("expandable");
+        li.title = "Click to inspect";
+        const detail = document.createElement("div");
+        detail.className = "tool-details";
+        detail.hidden = true;
+        li.appendChild(detail);
+        li.addEventListener("click", () => {
+          detail.hidden = !detail.hidden;
+          if (!detail.hidden) {
+            detail.innerHTML = renderToolDetail({
+              args: row.args,
+              result_preview: row.result_preview,
+              error: row.error,
+              permission: row.permission,
+              decision: row.decision,
+            });
+          }
+        });
+      }
       els.activity.appendChild(li);
     }
   }
@@ -225,6 +246,47 @@
       .replace(/^\s*[-*]\s+(.*)$/gm, "• $1");
   }
 
+  /** Show exactly what a tool was asked and what it gave back. */
+  function renderToolDetail(event) {
+    const rows = [];
+    const args = Object.keys(event.args || {}).length
+      ? JSON.stringify(event.args, null, 2)
+      : "(no arguments)";
+    rows.push(`<div class="detail-label">Arguments</div><pre>${escapeHtml(args)}</pre>`);
+
+    if (event.result_preview) {
+      rows.push(
+        `<div class="detail-label">Returned</div><pre>${escapeHtml(
+          event.result_preview
+        )}</pre>`
+      );
+    }
+    if (event.error) {
+      rows.push(
+        `<div class="detail-label">Error</div><pre class="bad">${escapeHtml(
+          event.error
+        )}</pre>`
+      );
+    }
+
+    const facts = [
+      `<span class="tag">${escapeHtml(event.permission)}</span>`,
+      `<span class="tag">${escapeHtml(event.decision)}</span>`,
+    ];
+    if (event.tainted) {
+      facts.push('<span class="tag warn">escalated: read external content</span>');
+    }
+    if (event.injection_findings && event.injection_findings.length) {
+      facts.push(
+        `<span class="tag bad">injection signals: ${escapeHtml(
+          event.injection_findings.join(", ")
+        )}</span>`
+      );
+    }
+    rows.push(`<div class="detail-facts">${facts.join("")}</div>`);
+    return rows.join("");
+  }
+
   function addMessage(role, html, toolEvents) {
     const wrapper = document.createElement("div");
     wrapper.className = `msg ${role}`;
@@ -234,13 +296,31 @@
     if (toolEvents && toolEvents.length) {
       const chips = document.createElement("div");
       chips.className = "tools-used";
+      const details = document.createElement("div");
+      details.className = "tool-details";
+      details.hidden = true;
+
       for (const event of toolEvents) {
-        const chip = document.createElement("span");
+        const chip = document.createElement("button");
         chip.className = `chip${event.ok ? "" : " fail"}`;
-        chip.textContent = event.name;
+        chip.title = "Show what this tool was asked and what it returned";
+        chip.textContent = event.duration_ms
+          ? `${event.name} · ${event.duration_ms}ms`
+          : event.name;
+        chip.addEventListener("click", () => {
+          const showing = details.dataset.open === event.name && !details.hidden;
+          if (showing) {
+            details.hidden = true;
+            details.dataset.open = "";
+            return;
+          }
+          details.dataset.open = event.name;
+          details.hidden = false;
+          details.innerHTML = renderToolDetail(event);
+        });
         chips.appendChild(chip);
       }
-      bubble.appendChild(chips);
+      bubble.append(chips, details);
     }
     wrapper.appendChild(bubble);
     els.messages.appendChild(wrapper);

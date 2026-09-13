@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 import uuid
@@ -11,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from jarvis.llm.base import Message, Role, ToolCall
+
+logger = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
@@ -40,6 +43,7 @@ CREATE TABLE IF NOT EXISTS tool_audit (
     ok              INTEGER NOT NULL,
     error           TEXT,
     decision        TEXT NOT NULL DEFAULT 'allow',
+    result_preview  TEXT,
     duration_ms     INTEGER NOT NULL DEFAULT 0,
     created_at      TEXT NOT NULL
 );
@@ -58,6 +62,17 @@ CREATE INDEX IF NOT EXISTS idx_confirmations_conversation
 """
 
 
+#: Columns added after the first release. ``CREATE TABLE IF NOT EXISTS`` does
+#: nothing to a table that already exists, so an upgraded install keeps the old
+#: shape and every insert naming a new column fails at runtime. Each entry is
+#: applied with ALTER TABLE when the column is missing.
+_MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("messages", "hidden", "INTEGER NOT NULL DEFAULT 0"),
+    ("tool_audit", "decision", "TEXT NOT NULL DEFAULT 'allow'"),
+    ("tool_audit", "result_preview", "TEXT"),
+)
+
+
 def _now() -> str:
     return datetime.now(tz=timezone.utc).isoformat(timespec="seconds")
 
@@ -72,7 +87,27 @@ class Store:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._migrate()
             self._conn.commit()
+
+    def _migrate(self) -> None:
+        """Bring an existing database up to the current column set.
+
+        Called with the lock held. Adding a column is the only migration shape
+        used so far; anything structural would need a rebuild-and-copy.
+        """
+        for table, column, ddl in _MIGRATIONS:
+            existing = {
+                row["name"]
+                for row in self._conn.execute(f"PRAGMA table_info({table})")
+            }
+            if not existing:
+                continue  # table does not exist yet; the schema script made it
+            if column not in existing:
+                logger.info("migrating %s: adding column %s", table, column)
+                self._conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"
+                )
 
     def close(self) -> None:
         with self._lock:
@@ -281,12 +316,13 @@ class Store:
         error: str | None,
         duration_ms: int,
         decision: str = "allow",
+        result_preview: str | None = None,
     ) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO tool_audit (conversation_id, tool, args, permission, ok,"
-                " error, decision, duration_ms, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO tool_audit (conversation_id, tool, args, permission,"
+                " ok, error, decision, result_preview, duration_ms, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     conversation_id,
                     tool,
@@ -295,6 +331,7 @@ class Store:
                     int(ok),
                     error,
                     decision,
+                    result_preview,
                     duration_ms,
                     _now(),
                 ),
@@ -304,8 +341,9 @@ class Store:
     def recent_tool_calls(self, limit: int = 20) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT tool, args, permission, ok, error, decision, duration_ms,"
-                " created_at FROM tool_audit ORDER BY id DESC LIMIT ?",
+                "SELECT tool, args, permission, ok, error, decision,"
+                " result_preview, duration_ms, created_at"
+                " FROM tool_audit ORDER BY id DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         return [

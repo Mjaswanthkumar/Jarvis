@@ -21,6 +21,10 @@ copy .env.example .env     # then set GEMINI_API_KEY and JARVIS_AUTH_TOKEN
 
 Open <http://127.0.0.1:8010> and paste your `JARVIS_AUTH_TOKEN` to connect.
 
+Every tool chip under a reply is clickable: it shows the arguments Jarvis sent,
+the data that came back, the permission level and the policy decision — so an
+answer can be checked against its source rather than trusted.
+
 An empty conversation offers starter prompts and a browsable catalogue of every
 tool, so the capabilities are discoverable rather than guessed at. `☰` lists past
 conversations; `✚` (or `Ctrl`/`Cmd`+`K`) starts a new one.

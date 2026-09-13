@@ -48,6 +48,10 @@ MAX_ITERATIONS = 6
 #: Tool payloads larger than this are truncated before going back to the model.
 MAX_TOOL_RESULT_CHARS = 6000
 
+#: How much of a result to keep for the UI. Enough to show the numbers behind an
+#: answer; not so much that a 200-line file fills the chat.
+MAX_PREVIEW_CHARS = 1200
+
 
 class ToolEvent(BaseModel):
     """One executed (or refused) tool call, surfaced to the UI and audit log."""
@@ -65,6 +69,9 @@ class ToolEvent(BaseModel):
     #: True when this call was gated because untrusted content was read earlier
     #: in the same turn.
     tainted: bool = False
+    #: A short rendering of what the tool returned, so the user can see the data
+    #: an answer came from rather than taking the model's word for it.
+    result_preview: str | None = None
 
     @property
     def needs_confirmation(self) -> bool:
@@ -324,7 +331,21 @@ class JarvisAgent:
             reason=verdict.reason,
             duration_ms=result.duration_ms,
             error=result.error,
+            result_preview=_preview(result),
         )
+
+
+def _preview(result: ToolResult) -> str | None:
+    """A compact, human-readable rendering of a tool result for the UI."""
+    if not result.ok or result.data is None:
+        return None
+    try:
+        text = json.dumps(result.data, indent=2, default=str)
+    except (TypeError, ValueError):
+        text = str(result.data)
+    if len(text) > MAX_PREVIEW_CHARS:
+        text = text[:MAX_PREVIEW_CHARS] + "\n… (truncated)"
+    return text
 
 
 def _serialize(result: ToolResult) -> str:

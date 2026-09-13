@@ -564,3 +564,112 @@ def test_tools_endpoint_gives_the_ui_what_it_needs_to_explain_itself(
         assert row["tags"], f"{row['name']} has no tag to group under"
         assert row["permission"] in {"READ_ONLY", "LOW_RISK", "CONFIRM_REQUIRED"}
         assert len(row["description"]) > 20
+
+
+def test_tool_events_carry_a_result_preview(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The UI shows the data an answer came from, so it has to be returned."""
+    from jarvis.agent import AgentResult, JarvisAgent, ToolEvent
+    from jarvis.llm.base import Message
+    from jarvis.tools.permissions import PermissionLevel
+
+    async def fake_run(self, message, history=None, *, approved_tools=None):
+        return AgentResult(
+            reply="15.7 GB total",
+            tool_events=[
+                ToolEvent(
+                    name="memory_info",
+                    ok=True,
+                    permission=PermissionLevel.READ_ONLY,
+                    duration_ms=12,
+                    result_preview='{\n  "total_gb": 15.71\n}',
+                )
+            ],
+            messages=[Message.user(message), Message.assistant("15.7 GB total")],
+        )
+
+    monkeypatch.setattr(JarvisAgent, "run", fake_run)
+    body = client.post("/api/chat", headers=HEADERS, json={"message": "ram?"}).json()
+    assert "15.71" in body["tool_events"][0]["result_preview"]
+
+    row = client.get("/api/activity", headers=HEADERS).json()[0]
+    assert "15.71" in row["result_preview"]
+
+
+def test_previews_are_truncated(client: TestClient) -> None:
+    """A 200-line file must not be dumped into the chat."""
+    from jarvis.agent import MAX_PREVIEW_CHARS, _preview
+    from jarvis.tools.registry import ToolResult
+
+    result = ToolResult(ok=True, tool="t", data={"content": "x" * 50_000})
+    preview = _preview(result)
+    assert preview is not None
+    assert len(preview) < MAX_PREVIEW_CHARS + 40
+    assert preview.endswith("(truncated)")
+
+
+def test_failed_tools_have_no_preview() -> None:
+    from jarvis.agent import _preview
+    from jarvis.tools.registry import ToolResult
+
+    assert _preview(ToolResult(ok=False, tool="t", error="boom")) is None
+
+
+def test_an_existing_database_is_migrated_in_place(tmp_path) -> None:
+    """CREATE TABLE IF NOT EXISTS does nothing to a table that already exists,
+    so every column added after the first release broke upgrades until now."""
+    import sqlite3
+
+    from jarvis.storage import Store
+
+    database = tmp_path / "old.db"
+    legacy = sqlite3.connect(database)
+    legacy.executescript(
+        """
+        CREATE TABLE conversations (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL,
+            role TEXT NOT NULL, content TEXT NOT NULL DEFAULT '',
+            tool_name TEXT, tool_calls TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL);
+        CREATE TABLE tool_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT,
+            tool TEXT NOT NULL, args TEXT NOT NULL DEFAULT '{}',
+            permission TEXT NOT NULL, ok INTEGER NOT NULL, error TEXT,
+            duration_ms INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+        """
+    )
+    legacy.execute(
+        "INSERT INTO conversations VALUES ('old1', 'kept', '2026-01-01', '2026-01-01')"
+    )
+    legacy.commit()
+    legacy.close()
+
+    store = Store(database)
+    try:
+        # The pre-existing row survives the migration.
+        assert [row["id"] for row in store.list_conversations()] == ["old1"]
+
+        # And the columns added since the first release now work.
+        from jarvis.llm.base import Message
+
+        store.add_messages("old1", [Message.user("hi", hidden=True)])
+        store.log_tool_call(
+            "old1", "cpu_info", {}, "READ_ONLY", True, None, 5, "allow", "{}"
+        )
+        assert store.recent_tool_calls()[0]["result_preview"] == "{}"
+        assert store.transcript("old1") == []  # the hidden message stays hidden
+    finally:
+        store.close()
+
+
+def test_migration_is_idempotent(tmp_path) -> None:
+    from jarvis.storage import Store
+
+    database = tmp_path / "twice.db"
+    Store(database).close()
+    store = Store(database)  # must not fail with "duplicate column name"
+    store.close()
