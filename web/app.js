@@ -235,14 +235,24 @@
     card.className = `bubble confirm-card${confirmation.suspicious ? " suspicious" : ""}`;
     const heading = confirmation.suspicious
       ? "⛔ Confirmation required — possible prompt injection"
-      : "⚠ Confirmation required";
+      : confirmation.escalated
+        ? "⚠ Confirmation required — proposed after reading a file"
+        : "⚠ Confirmation required";
+
+    let note = "";
+    if (confirmation.suspicious) {
+      note = `Content Jarvis just read contained text that tried to issue
+        instructions. This action may have been suggested by that content rather
+        than by you.`;
+    } else if (confirmation.escalated) {
+      note = `This action would normally run without asking, but Jarvis read
+        external content earlier in this turn — so it may have been suggested by
+        that content rather than by you.`;
+    }
+
     card.innerHTML = `<div class="confirm-head">${heading}</div>
       <div class="confirm-summary">${escapeHtml(confirmation.summary)}</div>` +
-      (confirmation.suspicious
-        ? `<div class="confirm-warning">Content Jarvis just read contained text
-           that tried to issue instructions. This action may have been suggested
-           by that content rather than by you.</div>`
-        : "");
+      (note ? `<div class="confirm-warning">${note}</div>` : "");
 
     const actions = document.createElement("div");
     actions.className = "confirm-actions";

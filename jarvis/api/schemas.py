@@ -26,6 +26,9 @@ class PendingConfirmation(BaseModel):
     #: Set when untrusted tool output in the same turn looked like an injection
     #: attempt -- this action may have been suggested by a file, not the user.
     suspicious: bool = False
+    #: Set when this action needs approval *only* because untrusted content was
+    #: read earlier in the turn (taint escalation), rather than by its own level.
+    escalated: bool = False
 
 
 class ChatResponse(BaseModel):

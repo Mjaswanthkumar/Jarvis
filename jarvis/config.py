@@ -39,6 +39,12 @@ class Settings(BaseSettings):
         default="", alias="JARVIS_AUTO_APPROVE_TOOLS"
     )
 
+    #: How reading untrusted content affects later actions in the same turn:
+    #: "strict"     - any untrusted content escalates LOW_RISK to CONFIRM_REQUIRED
+    #: "suspicious" - only content that trips the injection detector escalates
+    #: "off"        - no escalation (not recommended)
+    jarvis_taint_mode: str = Field(default="strict", alias="JARVIS_TAINT_MODE")
+
     #: When true, only READ_ONLY tools may run -- nothing can change the machine.
     jarvis_read_only_mode: bool = Field(default=False, alias="JARVIS_READ_ONLY_MODE")
 

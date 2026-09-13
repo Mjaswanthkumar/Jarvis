@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from jarvis import injection
 from jarvis.llm.base import LLMError, LLMProvider, Message, ToolCall
-from jarvis.security import Decision, PolicyEngine, summarize_call
+from jarvis.security import Decision, PolicyEngine, TaintMode, summarize_call
 from jarvis.tools.permissions import PermissionLevel
 from jarvis.tools.registry import REGISTRY, ToolRegistry, ToolResult
 
@@ -62,6 +62,9 @@ class ToolEvent(BaseModel):
     error: str | None = None
     #: Injection patterns detected in this tool's output, if any.
     injection_findings: list[str] = Field(default_factory=list)
+    #: True when this call was gated because untrusted content was read earlier
+    #: in the same turn.
+    tainted: bool = False
 
     @property
     def needs_confirmation(self) -> bool:
@@ -85,6 +88,11 @@ class AgentResult(BaseModel):
         have been suggested by a file rather than by the user.
         """
         return any(event.injection_findings for event in self.tool_events)
+
+    @property
+    def escalated_by_taint(self) -> bool:
+        """True when an action was gated only because untrusted content was read."""
+        return any(event.tainted for event in self.tool_events)
 
 
 class JarvisAgent:
@@ -146,6 +154,9 @@ class JarvisAgent:
     ) -> AgentResult:
         events: list[ToolEvent] = []
         pending: list[ToolCall] = []
+        #: Set once a tool has returned third-party text. Actions proposed after
+        #: that point may have been suggested by the content, not the user.
+        tainted = False
 
         for _ in range(self._max_iterations):
             try:
@@ -174,7 +185,9 @@ class JarvisAgent:
                     pending_confirmations=pending,
                 )
 
-            results = await self._execute_calls(response.tool_calls, approved)
+            results = await self._execute_calls(
+                response.tool_calls, approved, tainted
+            )
             for call, (result, event) in zip(
                 response.tool_calls, results, strict=False
             ):
@@ -183,6 +196,8 @@ class JarvisAgent:
                     pending.append(call)
                 spec = self._registry.get(call.name)
                 payload, findings = self._render_result(result, spec)
+                if self._taints(spec, result, findings):
+                    tainted = True
                 if findings:
                     event.injection_findings = findings
                     logger.warning(
@@ -204,6 +219,21 @@ class JarvisAgent:
             pending_confirmations=pending,
         )
 
+    def _taints(self, spec: Any, result: ToolResult, findings: list[str]) -> bool:
+        """Did this result bring untrusted text into the conversation?
+
+        Under `strict`, any third-party content taints the rest of the turn.
+        Under `suspicious`, only content that tripped the detector does -- which
+        is weaker, because the detector is evadable by design.
+        """
+        if spec is None or not spec.untrusted_output or not result.ok:
+            return False
+        if self._policy.taint_mode is TaintMode.OFF:
+            return False
+        if self._policy.taint_mode is TaintMode.SUSPICIOUS:
+            return bool(findings)
+        return True
+
     def _render_result(
         self, result: ToolResult, spec: Any
     ) -> tuple[str, list[str]]:
@@ -218,14 +248,19 @@ class JarvisAgent:
         )
 
     async def _execute_calls(
-        self, calls: list[ToolCall], approved: set[str]
+        self, calls: list[ToolCall], approved: set[str], tainted: bool = False
     ) -> list[tuple[ToolResult, ToolEvent]]:
-        """Run every requested tool concurrently, in worker threads."""
+        """Run every requested tool concurrently, in worker threads.
+
+        Calls in one batch were all chosen before any of their results existed,
+        so taint from a sibling does not apply retroactively -- it takes effect
+        from the next iteration.
+        """
         results: list[tuple[ToolResult, ToolEvent] | None] = [None] * len(calls)
 
         async def run_one(index: int, call: ToolCall) -> None:
             results[index] = await anyio.to_thread.run_sync(
-                self._execute_one, call, approved
+                self._execute_one, call, approved, tainted
             )
 
         async with anyio.create_task_group() as task_group:
@@ -234,12 +269,18 @@ class JarvisAgent:
         return [result for result in results if result is not None]
 
     def _execute_one(
-        self, call: ToolCall, approved: set[str]
+        self, call: ToolCall, approved: set[str], tainted: bool = False
     ) -> tuple[ToolResult, ToolEvent]:
         """Policy gate, then execution. Every path returns a result and an event."""
         spec = self._registry.get(call.name)
         verdict = self._policy.evaluate(
-            spec, tool_name=call.name, approved=call.name in approved
+            spec,
+            tool_name=call.name,
+            approved=call.name in approved,
+            tainted=tainted,
+        )
+        escalated = tainted and verdict.decision is Decision.CONFIRM and (
+            spec is not None and self._policy.escalates_when_tainted(spec.permission)
         )
 
         if verdict.decision is not Decision.ALLOW:
@@ -266,6 +307,7 @@ class JarvisAgent:
                     decision=verdict.decision,
                     reason=verdict.reason,
                     error=message,
+                    tainted=escalated,
                 ),
             )
 

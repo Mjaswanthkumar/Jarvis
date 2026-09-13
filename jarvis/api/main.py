@@ -160,6 +160,7 @@ def _persist_turn(
         )
 
     suspicious = result.saw_injection_attempt
+    escalated = result.escalated_by_taint
     pending = [
         store.create_confirmation(
             conversation_id,
@@ -182,6 +183,7 @@ def _persist_turn(
             PendingConfirmation(
                 **{k: row[k] for k in ("id", "tool", "args", "summary")},
                 suspicious=suspicious,
+                escalated=escalated,
             )
             for row in pending
         ],

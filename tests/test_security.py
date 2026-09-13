@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from jarvis.security import Decision, PolicyEngine, summarize_call
+from jarvis.security import Decision, PolicyEngine, TaintMode, summarize_call
 from jarvis.tools.permissions import PermissionLevel
 from jarvis.tools.registry import ToolRegistry, ToolSpec, tool
 
@@ -102,3 +102,65 @@ def test_summaries_describe_the_action() -> None:
         "Run close_application with name='spotify'"
     )
     assert summarize_call("cpu_info", {}) == "Run cpu_info"
+
+
+# ------------------------------------------------------------- taint ----
+def test_taint_escalates_low_risk_to_confirm() -> None:
+    """The gap this closes: a file could get open_path called with no prompt."""
+    policy = PolicyEngine()
+    clean = policy.evaluate(LOW_RISK, tool_name="opener")
+    tainted = policy.evaluate(LOW_RISK, tool_name="opener", tainted=True)
+
+    assert clean.decision is Decision.ALLOW
+    assert tainted.decision is Decision.CONFIRM
+    assert "external content" in tainted.reason
+
+
+def test_taint_does_not_touch_read_only_tools() -> None:
+    """Reading more is not an escalation; only acting is."""
+    verdict = PolicyEngine().evaluate(READ_ONLY, tool_name="reader", tainted=True)
+    assert verdict.decision is Decision.ALLOW
+
+
+def test_taint_cannot_downgrade_a_confirm_required_tool() -> None:
+    verdict = PolicyEngine().evaluate(CONFIRM, tool_name="closer", tainted=True)
+    assert verdict.decision is Decision.CONFIRM
+
+
+def test_taint_does_not_override_an_explicit_approval() -> None:
+    """Once the user has approved this exact call, taint has done its job."""
+    verdict = PolicyEngine().evaluate(
+        LOW_RISK, tool_name="opener", approved=True, tainted=True
+    )
+    assert verdict.decision is Decision.ALLOW
+
+
+def test_taint_mode_off_disables_escalation() -> None:
+    policy = PolicyEngine(taint_mode=TaintMode.OFF)
+    assert (
+        policy.evaluate(LOW_RISK, tool_name="opener", tainted=True).decision
+        is Decision.ALLOW
+    )
+
+
+def test_taint_never_weakens_read_only_mode() -> None:
+    policy = PolicyEngine(read_only_mode=True)
+    assert (
+        policy.evaluate(LOW_RISK, tool_name="opener", tainted=True).decision
+        is Decision.DENY
+    )
+
+
+def test_taint_mode_comes_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from jarvis.config import get_settings
+
+    monkeypatch.setenv("JARVIS_TAINT_MODE", "suspicious")
+    get_settings.cache_clear()
+    try:
+        assert PolicyEngine.from_settings().taint_mode is TaintMode.SUSPICIOUS
+    finally:
+        get_settings.cache_clear()
+
+
+def test_strict_is_the_default_taint_mode() -> None:
+    assert PolicyEngine().taint_mode is TaintMode.STRICT

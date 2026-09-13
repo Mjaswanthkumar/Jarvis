@@ -19,6 +19,14 @@ from jarvis.tools.registry import ToolSpec
 logger = logging.getLogger(__name__)
 
 
+class TaintMode(str, Enum):
+    """How reading untrusted content affects later actions in the same turn."""
+
+    STRICT = "strict"
+    SUSPICIOUS = "suspicious"
+    OFF = "off"
+
+
 class Decision(str, Enum):
     ALLOW = "allow"
     CONFIRM = "confirm"
@@ -54,10 +62,12 @@ class PolicyEngine:
         blocked_tools: set[str] | None = None,
         auto_approve: set[str] | None = None,
         read_only_mode: bool = False,
+        taint_mode: TaintMode = TaintMode.STRICT,
     ) -> None:
         self.blocked_tools = blocked_tools or set()
         self.auto_approve = auto_approve or set()
         self.read_only_mode = read_only_mode
+        self.taint_mode = taint_mode
 
     @classmethod
     def from_settings(cls, settings: Settings | None = None) -> PolicyEngine:
@@ -66,6 +76,14 @@ class PolicyEngine:
             blocked_tools=_split(settings.jarvis_blocked_tools),
             auto_approve=_split(settings.jarvis_auto_approve_tools),
             read_only_mode=settings.jarvis_read_only_mode,
+            taint_mode=TaintMode(settings.jarvis_taint_mode.strip().lower()),
+        )
+
+    def escalates_when_tainted(self, level: PermissionLevel) -> bool:
+        """True when reading untrusted content should raise this level's bar."""
+        return (
+            self.taint_mode is not TaintMode.OFF
+            and level is PermissionLevel.LOW_RISK
         )
 
     def evaluate(
@@ -74,6 +92,7 @@ class PolicyEngine:
         *,
         tool_name: str,
         approved: bool = False,
+        tainted: bool = False,
     ) -> PolicyDecision:
         if spec is None:
             return PolicyDecision(
@@ -98,6 +117,17 @@ class PolicyEngine:
                 f"'{spec.name}' changes machine state and Jarvis is in read-only mode",
                 level,
             )
+        # Taint: untrusted content was read earlier in this turn, so an action
+        # proposed now may have been suggested by that content rather than by
+        # the user. Raise the bar rather than trusting the model's judgement.
+        if tainted and not approved and self.escalates_when_tainted(level):
+            return PolicyDecision(
+                Decision.CONFIRM,
+                f"'{spec.name}' was proposed after Jarvis read external content, "
+                "so it needs your confirmation",
+                level,
+            )
+
         if level.requires_confirmation():
             if approved:
                 return PolicyDecision(

@@ -211,10 +211,17 @@ Three layers now stand between untrusted text and an action:
    known injection shapes are detected
 3. **A trust boundary in the system prompt** — tool output is data, never
    instructions
+4. **Taint tracking** — once a turn has read third-party text, a LOW_RISK action
+   proposed afterwards is escalated to CONFIRM_REQUIRED. Authorisation becomes a
+   function of *data flow*, not of the model's judgement. Configurable with
+   `JARVIS_TAINT_MODE`; `strict` by default
 
 Plus a red confirmation card when an action is proposed in the same turn that
 read suspicious content, because the human is the last line of defence and
 deserves to know *why* they are being asked.
+
+An eval case is the regression test: a file that asks Jarvis to open a folder
+must not cause `open_path` to execute, only to be proposed and held.
 
 The claim this supports is not "the agent cannot be tricked" — that problem is
 unsolved. It is **"the agent being tricked is not sufficient to cause harm"**,
