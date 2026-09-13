@@ -3,7 +3,7 @@
 Living roadmap maintained by the autonomous product-engineering loop.
 Read this before choosing work; update it after every meaningful change.
 
-*Iteration 4 · 2026-09-13 · 29 tools · 294 python + 22 js tests · 36 evals*
+*Iteration 5 · 2026-09-13 · 32 tools · 324 python + 22 js tests · 38 evals*
 
 ---
 
@@ -26,9 +26,10 @@ around `subprocess`. The value is that a model can propose an action and still
 not be able to perform it: authorisation is deterministic Python that never asks
 the model's opinion.
 
-**What it could become.** A PC that tells *you* things. Today it answers when
-asked. The largest untapped value is the inversion: proactive monitoring, a
-machine that says "your disk will be full in three days" before you wonder.
+**What it could become.** A PC that tells *you* things. The inversion has
+started: watches now report a threshold crossing without being asked. The next
+step is a machine that *predicts* — "at this rate your disk is full in three
+days" — rather than only reacting to a line being crossed.
 
 ---
 
@@ -38,7 +39,8 @@ machine that says "your disk will be full in three days" before you wonder.
 - Permission model is real and enforced at one chokepoint, not scattered
 - Confirmation binds to the frozen call, so approval cannot be bait-and-switched
 - Provider abstraction proven (audio transcription touched two files)
-- 294 python + 22 js tests, 36 evals, cassette-replayed in CI with no API key
+- 324 python + 22 js tests, 38 evals, cassette-replayed in CI with no API key
+- Proactive: watches fire from the sampler without a conversation open
 - Every tool call is inspectable: arguments, returned data, permission, decision
 - Vitals are recorded over time, so trends are answerable by both UI and agent
 - Injection defence measured before and after, not asserted
@@ -49,10 +51,12 @@ machine that says "your disk will be full in three days" before you wonder.
   completion whatever the user does.
 - Replies land all at once after several seconds. No streaming, so a slow turn
   looks identical to a hung one.
-- The agent is still purely reactive: it never initiates, so the vitals it now
-  records go unused unless somebody asks.
 - Nothing persists across conversations; a new thread knows nothing about the
   user's machine or projects.
+- Alerts only reach someone with the page open. A watch that fires overnight is
+  waiting silently the next morning rather than having notified anyone.
+- Watches are threshold-only. "Tell me when my disk is nearly full" is better
+  served by a projection than a fixed line.
 
 ### Technical limitations
 - Windows-only by construction (`winreg`, `EnumWindows`, App Paths)
@@ -90,7 +94,9 @@ machine that says "your disk will be full in three days" before you wonder.
 | 16 | **Restore pending confirmations on load** | A reload lost an unanswered approval card | The action stayed pending server-side but was invisible | Med | Low | High | 🛡 Reliability | ✅ Done |
 | 17 | **Retry a failed turn** | A 429 or network blip left red text and a dead end | One click instead of retyping | Med | Low | High | 🎨 UX | ✅ Done |
 | 18 | **Streaming (merge of #10)** | A slow turn looks identical to a hung one | Perceived latency, and forces a real stop-mid-turn answer | Med | Med | Med | ⚡ Perf | Open |
-| 6 | **Proactive triggers** | Agent is purely reactive | "Tell me when disk drops below 10%" — changes the category. **Now cheaper: the sampler and history already exist.** | High | Med | Med | 🔥 Now | Open |
+| 6 | **Proactive triggers** | Agent was purely reactive | "Tell me when disk drops below 10%" — changes the category | High | Med | Med | 🔥 Now | ✅ Done |
+| 19 | **Web push for alerts** | An alert only lands if the page is open | A watch that fires overnight should reach the phone | High | Med | Med | 🚀 Next | Open |
+| 20 | **Trend projection** | Watches are fixed thresholds | "At this rate the disk is full in 3 days" is more useful than a line | Med | Med | Med | 💡 Opportunity | Open |
 | 7 | **Metric history / sparklines** | Instantaneous numbers hid trends | "Is my CPU spiking?" answerable at a glance, and by the agent | Med | Med | Med | 🎨 UX | ✅ Done |
 | 8 | **Cross-session memory** | Nothing persists between conversations | "My main project is X" remembered | Med | Med | Med | 💡 Opportunity | Open |
 | 9 | **Second provider (Ollama)** | Gemini outage = total outage; proves the abstraction | Offline demo, no quota | Med | Low | High | ❌ Deferred | Owner chose "Gemini only" when asked; revisit only if they raise it |
@@ -109,7 +115,8 @@ machine that says "your disk will be full in three days" before you wonder.
 | Users will hit the 40-message truncation without noticing quality degrade | One pinned conversation id + no new-chat means every topic accretes | **Validated** — confirmed in code; drove #2 |
 | Most first-time users will not discover more than ~4 of 28 capabilities | Only one hint line exists; `/tools` is unused by the UI | **Validated by inspection** — drove #3 |
 | Taint-based escalation will rarely fire in normal use | Reading a file *and* acting on the machine in one turn is uncommon | **Validated** — 34/34 evals still pass with strict taint on |
-| Proactive alerts are the single largest value unlock | The product answers but never initiates; monitoring is why people open Task Manager | Untested — needs #6, now much cheaper since sampling exists |
+| Proactive alerts are the single largest value unlock | The product answers but never initiates; monitoring is why people open Task Manager | **Shipped and working** — but the value is capped until alerts can reach a closed page (#19) |
+| Threshold watches are enough; users do not need complex rules | "Below 10%" covers most of what people actually want to know | Holding — no evidence yet that anyone wants compound conditions |
 | Recorded history makes the agent qualitatively more useful, not just the UI | A trend question was previously unanswerable at any price | **Validated** — "has my CPU been busy?" now selects `metric_history` and answers from data |
 | Showing tool arguments increases trust rather than noise | Users who can see `close_application(name="spotify")` will approve faster | **Shipped** — details are collapsed by default, so the cost to a user who does not care is one extra line |
 | Additive-only migrations are sufficient for this product | Every schema change so far has been a new column | Holding — a structural change would need a rebuild path |
@@ -128,6 +135,7 @@ machine that says "your disk will be full in three days" before you wonder.
 | 2026-09-13 | **Reply rendering** — real markdown (tables, lists, code), with XSS tests in CI | The system prompt asks for tables, so most multi-value answers were displayed as raw pipe characters | `b6336f4` |
 | 2026-09-13 | **Approval + failure resilience** — restore pending confirmations on load, retry a failed turn | A reload orphaned a pending action; a 429 dead-ended the conversation | `b6336f4` |
 | 2026-09-13 | **Metric history** — 30s sampling, sparklines, and a `metric_history` tool | "Was my CPU busy an hour ago?" was unanswerable at any price; now both the UI and the agent can answer it | `14d0a67` |
+| 2026-09-13 | **Proactive watches** — conditions evaluated on every sample, with streak and cooldown | Changes what the product *is*: it now initiates. Verified live — a watch created by voice-of-the-user fired 70 seconds later without a prompt. | `551c55b` |
 
 ---
 
@@ -164,8 +172,14 @@ output or file content.
 (the dashboard) meaningfully better *and* gave the agent a capability it did not
 have: answering questions about the past.
 
-*Next evaluation:* the product is now capable and explainable, but still purely
-reactive. Sampling infrastructure now exists, which makes proactive triggers
-(#6) substantially cheaper than when first estimated — that is the next item,
-and it is the one that changes what the product *is* rather than how well it
-does what it already did.
+**Iteration 5** — proactive watches. The product now initiates rather than only
+responding, which is a change in category rather than degree. Deliberately not
+an LLM loop: the model translates the request into a comparison once, and plain
+Python evaluates it thereafter — cheap, predictable, and impossible to get wrong
+in an interesting way.
+
+*Next evaluation:* the obvious follow-up is the one the feature itself revealed.
+An alert only reaches a user with the page open, so a watch that fires overnight
+notifies nobody — which caps the value of everything just built. Web push (#19)
+is now the highest-leverage item. After that, the honest gap is memory: every
+conversation still starts from nothing.
