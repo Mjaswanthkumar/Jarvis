@@ -3,7 +3,7 @@
 Living roadmap maintained by the autonomous product-engineering loop.
 Read this before choosing work; update it after every meaningful change.
 
-*Iteration 5 · 2026-09-13 · 32 tools · 324 python + 22 js tests · 38 evals*
+*Iteration 6 · 2026-09-13 · 32 tools · 330 python + 22 js tests · 38 evals*
 
 ---
 
@@ -53,8 +53,8 @@ days" — rather than only reacting to a line being crossed.
   looks identical to a hung one.
 - Nothing persists across conversations; a new thread knows nothing about the
   user's machine or projects.
-- Alerts only reach someone with the page open. A watch that fires overnight is
-  waiting silently the next morning rather than having notified anyone.
+- Alerts reach the PC via a native toast, but a phone across the house still
+  gets nothing until the page is opened.
 - Watches are threshold-only. "Tell me when my disk is nearly full" is better
   served by a projection than a fixed line.
 
@@ -95,7 +95,8 @@ days" — rather than only reacting to a line being crossed.
 | 17 | **Retry a failed turn** | A 429 or network blip left red text and a dead end | One click instead of retyping | Med | Low | High | 🎨 UX | ✅ Done |
 | 18 | **Streaming (merge of #10)** | A slow turn looks identical to a hung one | Perceived latency, and forces a real stop-mid-turn answer | Med | Med | Med | ⚡ Perf | Open |
 | 6 | **Proactive triggers** | Agent was purely reactive | "Tell me when disk drops below 10%" — changes the category | High | Med | Med | 🔥 Now | ✅ Done |
-| 19 | **Web push for alerts** | An alert only lands if the page is open | A watch that fires overnight should reach the phone | High | Med | Med | 🚀 Next | Open |
+| 19 | **Alerts reach a closed page** | An alert only landed if the page was open | A watch that fires overnight should reach the user | High | Low | High | 🚀 Next | ✅ Done (native toast, not web push) |
+| 21 | **Alerts to the phone** | Native toast covers the PC; a phone across the house gets nothing | Completes the remote story | Med | High | Low | 💡 Opportunity | Open — needs HTTPS + push service; revisit only if remote use proves common |
 | 20 | **Trend projection** | Watches are fixed thresholds | "At this rate the disk is full in 3 days" is more useful than a line | Med | Med | Med | 💡 Opportunity | Open |
 | 7 | **Metric history / sparklines** | Instantaneous numbers hid trends | "Is my CPU spiking?" answerable at a glance, and by the agent | Med | Med | Med | 🎨 UX | ✅ Done |
 | 8 | **Cross-session memory** | Nothing persists between conversations | "My main project is X" remembered | Med | Med | Med | 💡 Opportunity | Open |
@@ -115,7 +116,8 @@ days" — rather than only reacting to a line being crossed.
 | Users will hit the 40-message truncation without noticing quality degrade | One pinned conversation id + no new-chat means every topic accretes | **Validated** — confirmed in code; drove #2 |
 | Most first-time users will not discover more than ~4 of 28 capabilities | Only one hint line exists; `/tools` is unused by the UI | **Validated by inspection** — drove #3 |
 | Taint-based escalation will rarely fire in normal use | Reading a file *and* acting on the machine in one turn is uncommon | **Validated** — 34/34 evals still pass with strict taint on |
-| Proactive alerts are the single largest value unlock | The product answers but never initiates; monitoring is why people open Task Manager | **Shipped and working** — but the value is capped until alerts can reach a closed page (#19) |
+| Proactive alerts are the single largest value unlock | The product answers but never initiates; monitoring is why people open Task Manager | **Shipped and working**, now reaching the desktop with nothing open |
+| Running *on* the machine makes the conventional answer wrong | Web push exists to reach a device you do not control; Jarvis controls this one | **Validated** — a native toast replaced HTTPS + service worker + VAPID + 3 dependencies with zero |
 | Threshold watches are enough; users do not need complex rules | "Below 10%" covers most of what people actually want to know | Holding — no evidence yet that anyone wants compound conditions |
 | Recorded history makes the agent qualitatively more useful, not just the UI | A trend question was previously unanswerable at any price | **Validated** — "has my CPU been busy?" now selects `metric_history` and answers from data |
 | Showing tool arguments increases trust rather than noise | Users who can see `close_application(name="spotify")` will approve faster | **Shipped** — details are collapsed by default, so the cost to a user who does not care is one extra line |
@@ -135,7 +137,10 @@ days" — rather than only reacting to a line being crossed.
 | 2026-09-13 | **Reply rendering** — real markdown (tables, lists, code), with XSS tests in CI | The system prompt asks for tables, so most multi-value answers were displayed as raw pipe characters | `b6336f4` |
 | 2026-09-13 | **Approval + failure resilience** — restore pending confirmations on load, retry a failed turn | A reload orphaned a pending action; a 429 dead-ended the conversation | `b6336f4` |
 | 2026-09-13 | **Metric history** — 30s sampling, sparklines, and a `metric_history` tool | "Was my CPU busy an hour ago?" was unanswerable at any price; now both the UI and the agent can answer it | `14d0a67` |
-| 2026-09-13 | **Proactive watches** — conditions evaluated on every sample, with streak and cooldown | Changes what the product *is*: it now initiates. Verified live — a watch created by voice-of-the-user fired 70 seconds later without a prompt. | `551c55b` |
+| 2026-09-13 | **Proactive watches** — conditions evaluated on every sample, with streak and cooldown | Changes what the product *is*: it now initiates. Verified live — a watch created from plain language fired 70 seconds later without a prompt. | `551c55b` |
+| 2026-09-13 | **Desktop notifications** — native Windows toast when a watch fires | Removed the cap on the previous change: an alert now reaches the user with no browser open, with zero new dependencies | `4f0d05a` |
+| 2026-09-13 | **Proactive watches** — conditions evaluated on every sample, with streak and cooldown | Changes what the product *is*: it now initiates. Verified live — a watch created from plain language fired 70 seconds later without a prompt. | `551c55b` |
+| 2026-09-13 | **Desktop notifications** — native Windows toast when a watch fires | Removed the cap on the previous change: an alert now reaches the user with no browser open, with zero new dependencies | `4f0d05a` |
 
 ---
 
@@ -178,8 +183,13 @@ an LLM loop: the model translates the request into a comparison once, and plain
 Python evaluates it thereafter — cheap, predictable, and impossible to get wrong
 in an interesting way.
 
-*Next evaluation:* the obvious follow-up is the one the feature itself revealed.
-An alert only reaches a user with the page open, so a watch that fires overnight
-notifies nobody — which caps the value of everything just built. Web push (#19)
-is now the highest-leverage item. After that, the honest gap is memory: every
-conversation still starts from nothing.
+**Iteration 6** — closed the cap the previous iteration created. Notable as a
+decision rather than an implementation: the conventional answer (web push) would
+have added HTTPS, a service worker, VAPID keys and three dependencies to deliver
+a message to a machine Jarvis was already running on. A native toast was better
+*because* of what this product is.
+
+*Next evaluation:* the remaining honest gap is memory. Every conversation starts
+from nothing — Jarvis re-learns the user's main project, their drive layout and
+their preferences every time. That is #8, and it is now the largest difference
+between this and something that feels like it knows you.
