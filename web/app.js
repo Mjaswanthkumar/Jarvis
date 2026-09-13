@@ -240,10 +240,7 @@
   }
 
   function renderMarkdown(text) {
-    return escapeHtml(text)
-      .replace(/`([^`]+)`/g, "<code>$1</code>")
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/^\s*[-*]\s+(.*)$/gm, "• $1");
+    return window.JarvisMarkdown.render(text);
   }
 
   /** Show exactly what a tool was asked and what it gave back. */
@@ -399,6 +396,19 @@
     deny.addEventListener("click", () => resolve(false));
   }
 
+  /** A failed turn keeps the question, so retrying costs one click. */
+  function addFailure(message, reason) {
+    const wrapper = addMessage(
+      "assistant",
+      '<span class="error">' + escapeHtml(reason) + "</span>" +
+        '<div class="failure-actions"><button class="starter retry">Retry</button></div>'
+    );
+    wrapper.querySelector(".retry").addEventListener("click", () => {
+      wrapper.remove();
+      send(message);
+    });
+  }
+
   function addTyping() {
     return addMessage(
       "assistant",
@@ -429,7 +439,7 @@
       typing.remove();
       handsFree = false;
       if (error.unauthorized) return logout("Session expired.");
-      addMessage("assistant", `<span class="error">${escapeHtml(error.message)}</span>`);
+      addFailure(message, error.message);
     } finally {
       els.send.disabled = false;
       if (!isTouchDevice()) els.input.focus();
@@ -511,6 +521,7 @@
     closePanels();
     els.messages.innerHTML = "";
     await loadHistory();
+    await restorePendingConfirmations();
   }
 
   async function startNewConversation() {
@@ -720,6 +731,19 @@
     els.speakToggle.classList.toggle("on", speakReplies);
   }
 
+  /** Pending approvals live on the server; a reload must not orphan them. */
+  async function restorePendingConfirmations() {
+    if (!conversationId) return;
+    try {
+      const rows = await api(
+        "/confirmations?conversation_id=" + encodeURIComponent(conversationId)
+      );
+      rows.forEach(addConfirmation);
+    } catch (error) {
+      if (error.unauthorized) return logout("Session expired.");
+    }
+  }
+
   async function loadHistory() {
     if (!conversationId) return showWelcome();
     try {
@@ -752,6 +776,7 @@
     if (health.read_only_mode) flags.push("read-only");
     setStatus(true, flags.length ? `online · ${flags.join(" · ")}` : "online");
     await loadHistory();
+    await restorePendingConfirmations();
     await poll();
     startPolling();
     if (!isTouchDevice()) els.input.focus();

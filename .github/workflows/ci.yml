@@ -26,6 +26,9 @@ jobs:
       - name: Unit and integration tests
         run: python -m pytest -q
 
+      - name: Reply renderer tests (escaping is security-relevant)
+        run: node tests/markdown.test.js
+
       - name: Agent evals (replayed cassette, no API key needed)
         run: python -m evals --threshold 0.9
 

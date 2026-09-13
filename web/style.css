@@ -316,16 +316,6 @@ button {
   font-style: normal;
 }
 
-.bubble table {
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.bubble td,
-.bubble th {
-  border: 1px solid var(--line);
-  padding: 3px 8px;
-}
 
 .tools-used {
   margin-top: 8px;
@@ -1057,4 +1047,103 @@ button.chip:hover {
 
 .activity .tool-details {
   margin-top: 8px;
+}
+
+/* ---------- rich replies ---------- */
+.bubble p {
+  margin: 0 0 8px;
+}
+
+.bubble p:last-child,
+.bubble ul:last-child,
+.bubble ol:last-child,
+.bubble .table-wrap:last-child {
+  margin-bottom: 0;
+}
+
+.bubble ul,
+.bubble ol {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+
+.bubble li {
+  margin: 2px 0;
+}
+
+.bubble h4,
+.bubble h5,
+.bubble h6 {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  letter-spacing: 0.4px;
+  color: var(--accent);
+}
+
+.bubble code {
+  background: rgba(3, 8, 14, 0.45);
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-family: "Cascadia Mono", ui-monospace, Consolas, monospace;
+  font-size: 12.5px;
+}
+
+.bubble pre.code {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(3, 8, 14, 0.5);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.bubble pre.code code {
+  background: none;
+  padding: 0;
+  white-space: pre;
+}
+
+.bubble hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 10px 0;
+}
+
+/* Tables can exceed a phone's width, so they scroll inside the bubble. */
+.table-wrap {
+  margin: 8px 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.bubble table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+}
+
+.bubble th,
+.bubble td {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.bubble thead th {
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.bubble tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.failure-actions {
+  margin-top: 10px;
 }

@@ -673,3 +673,36 @@ def test_migration_is_idempotent(tmp_path) -> None:
     Store(database).close()
     store = Store(database)  # must not fail with "duplicate column name"
     store.close()
+
+
+def test_confirmations_can_be_filtered_by_conversation(client: TestClient) -> None:
+    """The UI restores unanswered approvals after a reload, per conversation."""
+    from jarvis.api import deps
+
+    store = deps.get_store()
+    first = store.create_conversation()
+    second = store.create_conversation()
+    store.create_confirmation(first, "close_application", {"name": "a"}, "Run a")
+    store.create_confirmation(second, "close_application", {"name": "b"}, "Run b")
+
+    mine = client.get(
+        f"/api/confirmations?conversation_id={first}", headers=HEADERS
+    ).json()
+    assert [row["args"]["name"] for row in mine] == ["a"]
+
+    everything = client.get("/api/confirmations", headers=HEADERS).json()
+    assert len(everything) >= 2
+
+
+def test_resolved_confirmations_are_not_restored(client: TestClient) -> None:
+    from jarvis.api import deps
+
+    store = deps.get_store()
+    conversation = store.create_conversation()
+    row = store.create_confirmation(conversation, "close_application", {}, "Run")
+    store.resolve_confirmation(row["id"], "denied")
+
+    pending = client.get(
+        f"/api/confirmations?conversation_id={conversation}", headers=HEADERS
+    ).json()
+    assert pending == []

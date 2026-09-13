@@ -3,7 +3,7 @@
 Living roadmap maintained by the autonomous product-engineering loop.
 Read this before choosing work; update it after every meaningful change.
 
-*Iteration 1 · 2026-09-13 · 28 tools · 247 tests · 34 evals*
+*Iteration 2 · 2026-09-13 · 28 tools · 273 tests · 35 evals*
 
 ---
 
@@ -43,18 +43,13 @@ machine that says "your disk will be full in three days" before you wonder.
 - Voice works in every browser (native Web Speech, else server transcription)
 
 ### Weaknesses / UX problems
-- **The UI uses only 3 of 9 API endpoints.** `/tools`, `/conversations` and
-  `/confirmations` are built, tested, documented — and unreachable from the
-  interface. Capability exists; the product does not expose it.
-- **No way to start a new conversation.** The conversation id is pinned in
-  `localStorage` forever. Every topic accretes into one thread, which then hits
-  the 40-message truncation window and silently loses early context.
-- **Nothing tells a first-time user what to ask.** One hint line in the welcome
-  bubble stands in for 28 capabilities.
-- **Tool activity is opaque.** The panel shows name, ok, duration. Not the
-  arguments, not the result. "Why did it say that?" is unanswerable in the UI.
 - Metrics are instantaneous. "Is my CPU spiking?" needs a trend, not a number.
-- No keyboard shortcuts; no way to stop a running turn.
+- No way to stop a running turn once it starts.
+- `/confirmations` is still unused by the UI: a pending approval is lost if the
+  page reloads before it is answered.
+- The reply renderer handles bold, code and bullets, but the model often emits
+  markdown tables, which render as raw pipes.
+- Errors from a failed turn are plain red text with no retry affordance.
 
 ### Technical limitations
 - Windows-only by construction (`winreg`, `EnumWindows`, App Paths)
@@ -65,16 +60,17 @@ machine that says "your disk will be full in three days" before you wonder.
 - Gemini free tier 15 req/min — a voice turn costs 3+
 
 ### Product risks
-- **LOW_RISK actions are reachable by prompt injection.** A malicious file can
-  plausibly get `open_application` or `open_path` called with no confirmation.
-  This is the gap named in the public docs and is not yet closed.
-- Single provider: a Gemini outage is a total outage
-- No observability — a slow turn cannot be explained with data
+- Single provider: a Gemini outage is a total outage, and the free tier is
+  15 req/min while a voice turn costs 3+
+- No per-turn latency or token accounting, so cost and slowness are invisible
+- Schema migrations are additive-only; a structural change would need a
+  rebuild-and-copy path that does not exist yet
 
 ### Opportunities
 - Proactive monitoring would change the product category
-- Per-turn traces would make the agent explainable, not just usable
-- Conversation history already exists in SQLite and is simply not surfaced
+- Tool previews are now persisted — a "what did Jarvis do today?" digest is
+  nearly free from data already stored
+- Metric history would make the vitals row genuinely diagnostic
 
 ---
 
@@ -85,8 +81,11 @@ machine that says "your disk will be full in three days" before you wonder.
 | 1 | **Taint tracking** | Injection can reach LOW_RISK actions with no confirmation | Closes the one security gap named in the docs | High | Med | High | 🔥 Critical | ✅ Done |
 | 2 | **Conversation management** | Cannot start a new chat; one thread forever, silently truncated | Removes a functional hole users hit daily | High | Low | High | 🔥 Critical | ✅ Done |
 | 3 | **Capability discovery** | Nothing tells a new user what to ask; `/tools` unused | First-run experience; converts 28 hidden tools into visible value | High | Low | High | 🚀 Next | ✅ Done |
-| 4 | **Tool call transparency** | Activity panel hides args and results | Makes the agent explainable; debugging and trust | Med | Low | High | 🚀 Next | Open |
+| 4 | **Tool call transparency** | Activity panel hid args and results | Makes the agent explainable; debugging and trust | Med | Low | High | 🚀 Next | ✅ Done |
 | 5 | **Per-turn traces** | Cannot explain a slow turn | LLM vs tool latency, tokens, cost | Med | Med | High | 🚀 Next | Open |
+| 15 | **Markdown tables in replies** | The model emits tables; the renderer shows raw pipes | Answers with several values are unreadable | Med | Low | High | 🎨 UX | Open |
+| 16 | **Restore pending confirmations on load** | A reload loses an unanswered approval card | The action stays pending server-side but is invisible | Med | Low | High | 🛡 Reliability | Open |
+| 17 | **Retry a failed turn** | A 429 or network blip leaves red text and a dead end | One click instead of retyping | Med | Low | High | 🎨 UX | Open |
 | 6 | **Proactive triggers** | Agent is purely reactive | "Tell me when disk drops below 10%" — changes the category | High | High | Med | 💡 Opportunity | Open |
 | 7 | **Metric history / sparklines** | Instantaneous numbers hide trends | "Is my CPU spiking?" answerable at a glance | Med | Med | Med | 🎨 UX | Open |
 | 8 | **Cross-session memory** | Nothing persists between conversations | "My main project is X" remembered | Med | Med | Med | 💡 Opportunity | Open |
@@ -107,7 +106,8 @@ machine that says "your disk will be full in three days" before you wonder.
 | Most first-time users will not discover more than ~4 of 28 capabilities | Only one hint line exists; `/tools` is unused by the UI | **Validated by inspection** — drove #3 |
 | Taint-based escalation will rarely fire in normal use | Reading a file *and* acting on the machine in one turn is uncommon | **Validated** — 34/34 evals still pass with strict taint on |
 | Proactive alerts are the single largest value unlock | The product answers but never initiates; monitoring is why people open Task Manager | Untested — needs #6 |
-| Showing tool arguments increases trust rather than noise | Users who can see `close_application(name="spotify")` will approve faster | Untested — needs #4 |
+| Showing tool arguments increases trust rather than noise | Users who can see `close_application(name="spotify")` will approve faster | **Shipped** — details are collapsed by default, so the cost to a user who does not care is one extra line |
+| Additive-only migrations are sufficient for this product | Every schema change so far has been a new column | Holding — a structural change would need a rebuild path |
 
 ---
 
@@ -115,9 +115,11 @@ machine that says "your disk will be full in three days" before you wonder.
 
 | Date | Improvement | Why it was valuable | Commit |
 |---|---|---|---|
-| 2026-09-13 | **Taint tracking** — untrusted content read in a turn escalates later LOW_RISK actions to CONFIRM_REQUIRED | Closed the one security gap the docs named. Authorisation now depends on *data flow*, not the model's judgement. | `6b6f5cf` |
-| 2026-09-13 | **Conversation management** — new chat, switcher, delete, auto-titles | Removed a functional hole: users could not start a fresh conversation, so every topic accreted into one silently-truncated thread | `1c1c6f7` |
-| 2026-09-13 | **Capability discovery** — browsable tool catalogue + starter prompts | 28 tools were invisible; a first-time user saw one hint line. Converts built capability into perceived value. | `1c1c6f7` |
+| 2026-09-13 | **Taint tracking** — untrusted content read in a turn escalates later LOW_RISK actions to CONFIRM_REQUIRED | Closed the one security gap the docs named. Authorisation now depends on *data flow*, not the model's judgement. | `5f7ff84` |
+| 2026-09-13 | **Conversation management** — new chat, switcher, delete, auto-titles | Removed a functional hole: users could not start a fresh conversation, so every topic accreted into one silently-truncated thread. The dogfood database proved it: one thread titled "hi" with 24 messages. | `951e0ef` |
+| 2026-09-13 | **Capability discovery** — browsable tool catalogue + starter prompts | 28 tools were invisible; a first-time user saw one hint line. Converts built capability into perceived value. | `951e0ef` |
+| 2026-09-13 | **Tool call transparency** — clickable chips revealing arguments, returned data, permission and decision | "Where did that number come from?" was unanswerable from the UI. An answer can now be checked against its source. | `bb41155` |
+| 2026-09-13 | **Schema migrations** — ALTER TABLE for columns added after the first release | Every column added since Phase 1 was missing on existing databases; the real install failed with "no such column". Fresh test databases hid it entirely. | `bb41155` |
 
 ---
 
@@ -131,3 +133,20 @@ machine that says "your disk will be full in three days" before you wonder.
 | React | One screen, four state variables; a build step costs more than it returns |
 | Docker packaging | A PC agent needs host access to processes, windows and the filesystem — containerising means breaking out of the container |
 | Regex detector as a security gate | Trivially evaded; kept deliberately as a *signal* feeding taint and UI warnings, never as an authorisation decision |
+
+---
+
+## 7. Iteration log
+
+**Iteration 1** — closed the named security gap (taint tracking), then the
+largest functional hole (no new conversation) and the largest discoverability
+gap (28 invisible tools). Each was chosen because it was the most obvious
+weakness remaining, not because it was the most interesting to build.
+
+**Iteration 2** — made tool calls inspectable, which immediately exposed a
+latent reliability bug: schema changes had never been applied to existing
+databases. Fixing what you can see tends to reveal what you could not.
+
+*Next evaluation:* the UI is now capable but the reply rendering is the weakest
+visible surface — markdown tables, which the model emits constantly for
+multi-value answers, display as raw pipe characters.
