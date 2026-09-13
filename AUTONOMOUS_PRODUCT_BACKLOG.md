@@ -3,7 +3,7 @@
 Living roadmap maintained by the autonomous product-engineering loop.
 Read this before choosing work; update it after every meaningful change.
 
-*Iteration 2 · 2026-09-13 · 28 tools · 273 tests · 35 evals*
+*Iteration 4 · 2026-09-13 · 29 tools · 294 python + 22 js tests · 36 evals*
 
 ---
 
@@ -38,18 +38,21 @@ machine that says "your disk will be full in three days" before you wonder.
 - Permission model is real and enforced at one chokepoint, not scattered
 - Confirmation binds to the frozen call, so approval cannot be bait-and-switched
 - Provider abstraction proven (audio transcription touched two files)
-- 247 tests + 34 evals, cassette-replayed in CI with no API key
+- 294 python + 22 js tests, 36 evals, cassette-replayed in CI with no API key
+- Every tool call is inspectable: arguments, returned data, permission, decision
+- Vitals are recorded over time, so trends are answerable by both UI and agent
 - Injection defence measured before and after, not asserted
 - Voice works in every browser (native Web Speech, else server transcription)
 
 ### Weaknesses / UX problems
-- Metrics are instantaneous. "Is my CPU spiking?" needs a trend, not a number.
-- No way to stop a running turn once it starts.
-- `/confirmations` is still unused by the UI: a pending approval is lost if the
-  page reloads before it is answered.
-- The reply renderer handles bold, code and bullets, but the model often emits
-  markdown tables, which render as raw pipes.
-- Errors from a failed turn are plain red text with no retry affordance.
+- No way to stop a running turn once it starts; a 6-iteration turn runs to
+  completion whatever the user does.
+- Replies land all at once after several seconds. No streaming, so a slow turn
+  looks identical to a hung one.
+- The agent is still purely reactive: it never initiates, so the vitals it now
+  records go unused unless somebody asks.
+- Nothing persists across conversations; a new thread knows nothing about the
+  user's machine or projects.
 
 ### Technical limitations
 - Windows-only by construction (`winreg`, `EnumWindows`, App Paths)
@@ -82,14 +85,15 @@ machine that says "your disk will be full in three days" before you wonder.
 | 2 | **Conversation management** | Cannot start a new chat; one thread forever, silently truncated | Removes a functional hole users hit daily | High | Low | High | 🔥 Critical | ✅ Done |
 | 3 | **Capability discovery** | Nothing tells a new user what to ask; `/tools` unused | First-run experience; converts 28 hidden tools into visible value | High | Low | High | 🚀 Next | ✅ Done |
 | 4 | **Tool call transparency** | Activity panel hid args and results | Makes the agent explainable; debugging and trust | Med | Low | High | 🚀 Next | ✅ Done |
-| 5 | **Per-turn traces** | Cannot explain a slow turn | LLM vs tool latency, tokens, cost | Med | Med | High | 🚀 Next | Open |
-| 15 | **Markdown tables in replies** | The model emits tables; the renderer shows raw pipes | Answers with several values are unreadable | Med | Low | High | 🎨 UX | Open |
-| 16 | **Restore pending confirmations on load** | A reload loses an unanswered approval card | The action stays pending server-side but is invisible | Med | Low | High | 🛡 Reliability | Open |
-| 17 | **Retry a failed turn** | A 429 or network blip leaves red text and a dead end | One click instead of retyping | Med | Low | High | 🎨 UX | Open |
-| 6 | **Proactive triggers** | Agent is purely reactive | "Tell me when disk drops below 10%" — changes the category | High | High | Med | 💡 Opportunity | Open |
-| 7 | **Metric history / sparklines** | Instantaneous numbers hide trends | "Is my CPU spiking?" answerable at a glance | Med | Med | Med | 🎨 UX | Open |
+| 5 | **Per-turn traces** | Tool durations are shown; LLM latency and tokens are not | Explains where a slow turn went | Med | Med | High | 🚀 Next | Open |
+| 15 | **Markdown tables in replies** | The model emits tables; the renderer showed raw pipes | Answers with several values are unreadable | Med | Low | High | 🎨 UX | ✅ Done |
+| 16 | **Restore pending confirmations on load** | A reload lost an unanswered approval card | The action stayed pending server-side but was invisible | Med | Low | High | 🛡 Reliability | ✅ Done |
+| 17 | **Retry a failed turn** | A 429 or network blip left red text and a dead end | One click instead of retyping | Med | Low | High | 🎨 UX | ✅ Done |
+| 18 | **Streaming (merge of #10)** | A slow turn looks identical to a hung one | Perceived latency, and forces a real stop-mid-turn answer | Med | Med | Med | ⚡ Perf | Open |
+| 6 | **Proactive triggers** | Agent is purely reactive | "Tell me when disk drops below 10%" — changes the category. **Now cheaper: the sampler and history already exist.** | High | Med | Med | 🔥 Now | Open |
+| 7 | **Metric history / sparklines** | Instantaneous numbers hid trends | "Is my CPU spiking?" answerable at a glance, and by the agent | Med | Med | Med | 🎨 UX | ✅ Done |
 | 8 | **Cross-session memory** | Nothing persists between conversations | "My main project is X" remembered | Med | Med | Med | 💡 Opportunity | Open |
-| 9 | **Second provider (Ollama)** | Gemini outage = total outage; proves the abstraction | Offline demo, no quota | Med | Low | High | 🚀 Next | Open |
+| 9 | **Second provider (Ollama)** | Gemini outage = total outage; proves the abstraction | Offline demo, no quota | Med | Low | High | ❌ Deferred | Owner chose "Gemini only" when asked; revisit only if they raise it |
 | 10 | **Streaming (SSE)** | Replies land all at once after seconds | Perceived latency; forces a stop-mid-turn answer | Med | Med | Med | ⚡ Perf | Open |
 | 11 | **History summarisation** | 40-message window drops context silently | Long conversations stay coherent | Med | Med | Med | 🧹 Debt | Open |
 | 12 | **UWP / Store app launching** | `open_application` misses Store apps | "any app" becomes literally true | Low | Low | High | 🎨 UX | Open |
@@ -105,7 +109,8 @@ machine that says "your disk will be full in three days" before you wonder.
 | Users will hit the 40-message truncation without noticing quality degrade | One pinned conversation id + no new-chat means every topic accretes | **Validated** — confirmed in code; drove #2 |
 | Most first-time users will not discover more than ~4 of 28 capabilities | Only one hint line exists; `/tools` is unused by the UI | **Validated by inspection** — drove #3 |
 | Taint-based escalation will rarely fire in normal use | Reading a file *and* acting on the machine in one turn is uncommon | **Validated** — 34/34 evals still pass with strict taint on |
-| Proactive alerts are the single largest value unlock | The product answers but never initiates; monitoring is why people open Task Manager | Untested — needs #6 |
+| Proactive alerts are the single largest value unlock | The product answers but never initiates; monitoring is why people open Task Manager | Untested — needs #6, now much cheaper since sampling exists |
+| Recorded history makes the agent qualitatively more useful, not just the UI | A trend question was previously unanswerable at any price | **Validated** — "has my CPU been busy?" now selects `metric_history` and answers from data |
 | Showing tool arguments increases trust rather than noise | Users who can see `close_application(name="spotify")` will approve faster | **Shipped** — details are collapsed by default, so the cost to a user who does not care is one extra line |
 | Additive-only migrations are sufficient for this product | Every schema change so far has been a new column | Holding — a structural change would need a rebuild path |
 
@@ -120,6 +125,9 @@ machine that says "your disk will be full in three days" before you wonder.
 | 2026-09-13 | **Capability discovery** — browsable tool catalogue + starter prompts | 28 tools were invisible; a first-time user saw one hint line. Converts built capability into perceived value. | `951e0ef` |
 | 2026-09-13 | **Tool call transparency** — clickable chips revealing arguments, returned data, permission and decision | "Where did that number come from?" was unanswerable from the UI. An answer can now be checked against its source. | `bb41155` |
 | 2026-09-13 | **Schema migrations** — ALTER TABLE for columns added after the first release | Every column added since Phase 1 was missing on existing databases; the real install failed with "no such column". Fresh test databases hid it entirely. | `bb41155` |
+| 2026-09-13 | **Reply rendering** — real markdown (tables, lists, code), with XSS tests in CI | The system prompt asks for tables, so most multi-value answers were displayed as raw pipe characters | `b6336f4` |
+| 2026-09-13 | **Approval + failure resilience** — restore pending confirmations on load, retry a failed turn | A reload orphaned a pending action; a 429 dead-ended the conversation | `b6336f4` |
+| 2026-09-13 | **Metric history** — 30s sampling, sparklines, and a `metric_history` tool | "Was my CPU busy an hour ago?" was unanswerable at any price; now both the UI and the agent can answer it | `14d0a67` |
 
 ---
 
@@ -147,6 +155,17 @@ weakness remaining, not because it was the most interesting to build.
 latent reliability bug: schema changes had never been applied to existing
 databases. Fixing what you can see tends to reveal what you could not.
 
-*Next evaluation:* the UI is now capable but the reply rendering is the weakest
-visible surface — markdown tables, which the model emits constantly for
-multi-value answers, display as raw pipe characters.
+**Iteration 3** — fixed the reply surface: real markdown rendering with XSS
+tests, restored pending approvals across reloads, and a retry on failure. The
+renderer got its own test suite in CI because everything it renders is model
+output or file content.
+
+**Iteration 4** — recorded vitals over time. This made an existing feature
+(the dashboard) meaningfully better *and* gave the agent a capability it did not
+have: answering questions about the past.
+
+*Next evaluation:* the product is now capable and explainable, but still purely
+reactive. Sampling infrastructure now exists, which makes proactive triggers
+(#6) substantially cheaper than when first estimated — that is the next item,
+and it is the one that changes what the product *is* rather than how well it
+does what it already did.
