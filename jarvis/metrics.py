@@ -15,7 +15,7 @@ from typing import Any
 
 import psutil
 
-from jarvis import watches
+from jarvis import notify, watches
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +70,12 @@ class MetricSampler:
         store: Any,
         interval: float = SAMPLE_INTERVAL_SECONDS,
         retention_hours: int = RETENTION_HOURS,
+        desktop_notifications: bool = True,
     ) -> None:
         self._store = store
         self._interval = interval
         self._retention_hours = retention_hours
+        self._desktop_notifications = desktop_notifications
         self._task: asyncio.Task[None] | None = None
 
     async def _run(self) -> None:
@@ -137,6 +139,11 @@ class MetricSampler:
             )
             self._store.mark_watch_fired(watch["id"])
             logger.info("watch fired: %s", message)
+            # An alert nobody sees is not an alert: go to the desktop too,
+            # since a watch can fire with no browser open at all.
+            notify.send(
+                "Jarvis", message, enabled=self._desktop_notifications
+            )
 
     def start(self) -> None:
         if self._task is None or self._task.done():

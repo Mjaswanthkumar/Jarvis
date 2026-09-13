@@ -35,8 +35,11 @@ Ask *"tell me when my disk drops below 10%"* and Jarvis keeps watching after the
 conversation ends. The sampler evaluates every watch on each 30-second sample;
 a condition must breach twice in a row before it fires, and then stays quiet for
 30 minutes, so a metric sitting on its threshold cannot produce an alert every
-interval. Alerts appear in the conversation and are read aloud if voice replies
-are on.
+interval. Alerts appear in the conversation, are read aloud if voice replies are on, and
+raise a **native Windows notification** so they reach you with no browser open —
+which is the point, since a watch can fire at 3am. Jarvis runs on the machine it
+is watching, so this needs no HTTPS, no service worker and no push service.
+Disable with `JARVIS_DESKTOP_NOTIFICATIONS=false`.
 
 The condition itself is a comparison against a number, evaluated in plain
 Python — not an LLM loop. The model's job is turning the request into that
@@ -78,6 +81,8 @@ least 24 characters.
 | `JARVIS_ALLOWED_ROOTS` | Comma-separated filesystem roots Jarvis may inspect (default: your home dir) |
 | `JARVIS_DATA_DIR` | Where `jarvis.db` lives (default `~/.jarvis`) |
 | `JARVIS_TLS_CERTFILE` / `JARVIS_TLS_KEYFILE` | Serve HTTPS — required for voice input from a phone |
+| `JARVIS_DESKTOP_NOTIFICATIONS` | Native Windows toast when a watch fires (default true) |
+| `JARVIS_TAINT_MODE` | `strict` (default), `suspicious` or `off` — see Prompt injection |
 
 ## Security model
 

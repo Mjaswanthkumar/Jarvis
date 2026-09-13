@@ -39,6 +39,12 @@ class Settings(BaseSettings):
         default="", alias="JARVIS_AUTO_APPROVE_TOOLS"
     )
 
+    #: Raise a native desktop notification when a watch fires, so an alert
+    #: reaches the user with no page open.
+    jarvis_desktop_notifications: bool = Field(
+        default=True, alias="JARVIS_DESKTOP_NOTIFICATIONS"
+    )
+
     #: How reading untrusted content affects later actions in the same turn:
     #: "strict"     - any untrusted content escalates LOW_RISK to CONFIRM_REQUIRED
     #: "suspicious" - only content that trips the injection detector escalates

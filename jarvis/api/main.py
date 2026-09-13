@@ -326,7 +326,10 @@ _CONTENT_SECURITY_POLICY = (
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Sample machine vitals for as long as the server runs."""
-    sampler = MetricSampler(get_store())
+    sampler = MetricSampler(
+        get_store(),
+        desktop_notifications=get_settings().jarvis_desktop_notifications,
+    )
     sampler.start()
     try:
         yield

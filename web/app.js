@@ -279,7 +279,27 @@
       els.messages.scrollTop = els.messages.scrollHeight;
 
       if (speakReplies) voice.speak(alert.message);
+      notifyInBrowser(alert.message);
     }
+  }
+
+  /** A background tab should still surface an alert. */
+  function notifyInBrowser(message) {
+    if (!("Notification" in window)) return;
+    if (document.visibilityState === "visible") return;
+    if (Notification.permission !== "granted") return;
+    try {
+      new Notification("Jarvis", { body: message, icon: "/static/icon.svg" });
+    } catch {
+      /* some browsers only allow this from a service worker */
+    }
+  }
+
+  /** Asked for once, after the user has engaged enough to want alerts. */
+  function requestNotificationPermission() {
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "default") return;
+    Notification.requestPermission().catch(() => {});
   }
 
   function renderActivity(rows) {
@@ -621,6 +641,7 @@
     voice.stopSpeaking();
     closePanels();
     try {
+      requestNotificationPermission();
       const created = await api("/conversations", { method: "POST" });
       conversationId = created.id;
       storageSet(CONV_KEY, created.id);

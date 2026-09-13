@@ -228,3 +228,86 @@ def test_watch_tools_have_sensible_permissions() -> None:
     assert REGISTRY.get("create_watch").permission is PermissionLevel.LOW_RISK
     assert REGISTRY.get("delete_watch").permission is PermissionLevel.LOW_RISK
     assert REGISTRY.get("list_watches").permission is PermissionLevel.READ_ONLY
+
+
+# ------------------------------------------------------- desktop alerts ----
+def test_notification_content_is_never_interpolated_into_the_script() -> None:
+    """Alert text reaches PowerShell through the environment, not the source.
+
+    A watch note is user-supplied, so a message that looks like a command must
+    stay a message.
+    """
+    from jarvis import notify
+
+    assert "$env:JARVIS_TOAST_BODY" in notify._SCRIPT
+    assert "{body}" not in notify._SCRIPT
+    assert "{title}" not in notify._SCRIPT
+
+
+def test_notifications_can_be_disabled() -> None:
+    from jarvis import notify
+
+    assert notify.send("Jarvis", "anything", enabled=False) is False
+
+
+def test_empty_notifications_are_skipped() -> None:
+    from jarvis import notify
+
+    assert notify.send("Jarvis", "   ") is False
+
+
+def test_a_failing_notifier_does_not_break_a_watch(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing PowerShell must not stop the alert being recorded."""
+    from jarvis import notify
+
+    def boom(*args, **kwargs):
+        raise OSError("powershell is not installed")
+
+    monkeypatch.setattr(notify.subprocess, "run", boom)
+    store.create_watch("cpu", "above", 0.0)
+    sampler = MetricSampler(store, interval=0.05)
+
+    sampler._check_watches({"cpu_percent": 50.0})
+    sampler._check_watches({"cpu_percent": 50.0})
+
+    assert len(store.list_alerts()) == 1, "the alert was lost when the toast failed"
+
+
+def test_the_sampler_notifies_the_desktop_when_a_watch_fires(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from jarvis import notify
+
+    sent: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        notify, "send", lambda title, body, **kw: sent.append((title, body)) or True
+    )
+
+    store.create_watch("disk", "below", 50.0, "nearly full")
+    sampler = MetricSampler(store, interval=0.05)
+    sampler._check_watches({"disk_percent": 5.0})
+    sampler._check_watches({"disk_percent": 5.0})
+
+    assert len(sent) == 1
+    assert sent[0][0] == "Jarvis"
+    assert "dropped below 50%" in sent[0][1]
+
+
+def test_desktop_notifications_respect_the_setting(
+    store: Store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from jarvis import notify
+
+    calls: list[bool] = []
+    monkeypatch.setattr(
+        notify, "send", lambda title, body, **kw: calls.append(kw.get("enabled", True))
+    )
+
+    store.create_watch("cpu", "above", 0.0)
+    sampler = MetricSampler(store, interval=0.05, desktop_notifications=False)
+    sampler._check_watches({"cpu_percent": 50.0})
+    sampler._check_watches({"cpu_percent": 50.0})
+
+    assert calls == [False]
